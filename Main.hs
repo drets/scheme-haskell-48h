@@ -122,6 +122,11 @@ parseExpr =  try parseNumber
          <|> try (char '#' >> parseCharacter)
          <|> parseString
          <|> parseAtom
+         <|> parseQuoted
+         <|> do char '('
+                x <- try parseList <|> parseDottedList
+                char ')'
+                return x
 
 parseCharacter :: Parser LispValue
 parseCharacter = do
@@ -147,3 +152,18 @@ parseComplex = do
   RealNumber y <- parseReal
   char 'i'
   return $ ComplexNumber (LispComplex x y)
+
+parseList :: Parser LispValue
+parseList = liftM List $ sepBy parseExpr spaces
+
+parseDottedList :: Parser LispValue
+parseDottedList = do
+  head <- endBy parseExpr spaces
+  tail <- char '.' >> spaces >> parseExpr
+  return $ DottedList head tail
+
+parseQuoted :: Parser LispValue
+parseQuoted = do
+  char '\''
+  x <- parseExpr
+  return $ List [Atom "quote", x]

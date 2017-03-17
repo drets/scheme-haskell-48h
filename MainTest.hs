@@ -3,12 +3,12 @@ module TestMain where
 import Test.HUnit
 import Control.Monad
 import Text.ParserCombinators.Parsec hiding (spaces, try)
+import Data.Either
 
 import Main hiding (main)
 
-
-testScheme :: Test
-testScheme = TestCase $ do
+goodTestScheme :: Test
+goodTestScheme = TestCase $ do
   let testCases =
         [ ( "1"
           , RealNumber (LispInteger 1)
@@ -64,13 +64,34 @@ testScheme = TestCase $ do
         , ( "100.0+100i"
           , ComplexNumber (LispComplex (LispDouble 100.0) (LispInteger 100))
           )
+        , ( "(a test)"
+          , List [Atom "a", Atom "test"]
+          )
+        , ( "(a (nested) test)"
+          , List [Atom "a", List [Atom "nested"], Atom "test"]
+          )
+        , ( "(a (dotted . list) test)"
+          , List [Atom "a", DottedList [Atom "dotted"] (Atom "list"), Atom "test"]
+          )
+        , ( "(a '(quoted (dotted . list)) test)"
+          , List [Atom "a", List [Atom "quote", List [Atom "quoted", DottedList [Atom "dotted"] (Atom "list")]], Atom "test"]
+          )
         ]
 
   forM_ testCases $ do
     \(input, expected) -> assertEqual "" (Right expected) (run input)
 
+badTestScheme :: Test
+badTestScheme = TestCase $ do
+  let testCases =
+        [ "(a '(imbalanced parens)"
+        ]
+
+  forM_ testCases $ do
+    \input -> assert (isLeft (run input))
+
 run :: String -> Either ParseError LispValue
 run = parse parseExpr "scheme"
 
 main :: IO Counts
-main = runTestTT $ TestList [testScheme]
+main = runTestTT $ TestList [goodTestScheme, badTestScheme]
