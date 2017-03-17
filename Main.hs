@@ -2,19 +2,18 @@
 module Main where
 
 import System.Environment
-import Text.ParserCombinators.Parsec hiding (spaces)
+import Text.ParserCombinators.Parsec hiding (spaces, try)
 import Text.Parsec.Prim
 import Control.Monad
 import Numeric
 import Data.Foldable
 import Data.Char
 
-
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 readExpr :: String -> String
-readExpr input = case parse parseExpr "list" input of
+readExpr input = case parse parseExpr "scheme" input of
   Left err -> "No match: " ++ show err
   Right val -> "Found value:\n" ++ show val
 
@@ -29,12 +28,24 @@ main = do
 data LispValue = Atom String
                | List [LispValue]
                | DottedList [LispValue] LispValue
-               | NumberBase [(Integer, String)]
-               | Number Integer
+               | RealNumber LispReal
+               | RationalNumber LispRational
+               | ComplexNumber LispComplex
                | Character String
                | String String
                | Bool Bool
-               deriving (Show)
+               deriving (Eq, Show)
+
+data LispComplex =
+  LispComplex LispReal LispReal
+  deriving (Eq, Show)
+
+data LispReal =
+  LispDouble Double | LispRat LispRational | LispInteger Integer
+  deriving (Eq, Show)
+
+data LispRational = LispRational Integer Integer
+  deriving (Eq, Show)
 
 parseString :: Parser LispValue
 parseString = do
@@ -58,14 +69,6 @@ parseAtom = do
     "#f" -> Bool False
     _    -> Atom atom
 
-parseNumber :: Parser LispValue
-parseNumber = parseInt <|> (char '#' >> (parseDecimal <|> parseOctal <|> parseHex <|> parseBinary))
-
-parseBinary :: Parser LispValue
-parseBinary = do
-  char 'b'
-  x <- many1 (oneOf "01")
-  return $ Number (fromIntegral $ binToDec x)
 
 binToDec :: String -> Int
 binToDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
@@ -73,36 +76,74 @@ binToDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
 parseInt :: Parser LispValue
 parseInt = do
   x <- many1 digit
-  return $ Number (read x)
+  return $ RealNumber (LispInteger (read x))
 
 parseOctal :: Parser LispValue
 parseOctal = do
-  char 'o'
   x <- many1 octDigit
   let first:_ = readOct x
-  return $ Number (fst first)
+  return $ RealNumber (LispInteger (fst first))
 
 parseHex :: Parser LispValue
 parseHex = do
-  char 'x'
   x <- many1 hexDigit
   let first:_ = readHex x
-  return $ Number (fst first)
+  return $ RealNumber (LispInteger (fst first))
 
 parseDecimal :: Parser LispValue
 parseDecimal = do
-  char 'd'
   x <- many1 digit
-  let first:_ = readDec x
-  return $ Number (fst first)
+  char '.'
+  y <- many digit
+  let first:_ = readFloat (x ++ "." ++ y)
+  return $ RealNumber (LispDouble (fst first))
+
+parseBinary :: Parser LispValue
+parseBinary = do
+  x <- many1 (oneOf "01")
+  return $ RealNumber (LispInteger (fromIntegral $ binToDec x))
+
+parseNumber :: Parser LispValue
+parseNumber =  try parseComplex
+           <|> try parseReal
+           <|> (char '#' >> parseNumberWithRadix)
+
+parseNumberWithRadix :: Parser LispValue
+parseNumberWithRadix = do
+  t <- char 'o' <|> char 'x' <|> char 'd' <|> char 'b'
+  case t of
+    'o' -> parseOctal
+    'b' -> parseBinary
+    'x' -> parseHex
+    'd' -> parseDecimal
 
 parseExpr :: Parser LispValue
-parseExpr = parseCharacter <|> parseString <|> parseNumber <|> parseAtom
+parseExpr =  try parseNumber
+         <|> try (char '#' >> parseCharacter)
+         <|> parseString
+         <|> parseAtom
 
 parseCharacter :: Parser LispValue
 parseCharacter = do
-  char '#'
   char '\\'
   first <- anyChar
   rest <- many (noneOf " ")
   return $ Character (first:rest)
+
+parseRational :: Parser LispValue
+parseRational = do
+  RealNumber (LispInteger numerator) <- parseInt
+  char '/'
+  RealNumber (LispInteger denominator) <- parseInt
+  return $ RationalNumber (LispRational numerator denominator)
+
+parseReal :: Parser LispValue
+parseReal = try parseRational <|> try parseDecimal <|> parseInt
+
+parseComplex :: Parser LispValue
+parseComplex = do
+  RealNumber x <- parseReal
+  char '+'
+  RealNumber y <- parseReal
+  char 'i'
+  return $ ComplexNumber (LispComplex x y)

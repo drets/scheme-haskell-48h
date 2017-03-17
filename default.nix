@@ -7,5 +7,6 @@ haskell.lib.buildStackProject {
                   cabal-install
                   zlib
                   cairo
-                  haskellPackages.parsec ];
+                  haskellPackages.parsec
+                  haskellPackages.HUnit ];
 }
