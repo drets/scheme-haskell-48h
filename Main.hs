@@ -9,6 +9,7 @@ import Numeric
 import Data.Foldable
 import Data.Char
 
+
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
@@ -30,6 +31,7 @@ data LispValue = Atom String
                | DottedList [LispValue] LispValue
                | NumberBase [(Integer, String)]
                | Number Integer
+               | Character String
                | String String
                | Bool Bool
                deriving (Show)
@@ -95,4 +97,12 @@ parseDecimal = do
   return $ Number (fst first)
 
 parseExpr :: Parser LispValue
-parseExpr = parseAtom <|> parseString <|> parseNumber
+parseExpr = parseCharacter <|> parseString <|> parseNumber <|> parseAtom
+
+parseCharacter :: Parser LispValue
+parseCharacter = do
+  char '#'
+  char '\\'
+  first <- anyChar
+  rest <- many (noneOf " ")
+  return $ Character (first:rest)
