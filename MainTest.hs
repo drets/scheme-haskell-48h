@@ -10,40 +10,31 @@ import Main hiding (main)
 testScheme :: Test
 testScheme = TestCase $ do
   let testCases =
-        [ (
-            "1"
+        [ ( "1"
           , RealNumber (LispInteger 1)
           )
-        , (
-            "10"
+        , ( "10"
           , RealNumber (LispInteger 10)
           )
-        , (
-            "10."
+        , ( "10."
           , RealNumber (LispDouble 10.0)
           )
-        , (
-            "1/2"
+        , ( "1/2"
           , RationalNumber (LispRational 1 2)
           )
-        , (
-            "var"
+        , ( "var"
           , Atom "var"
           )
-        , (
-            "\"Hello world\""
+        , ( "\"Hello world\""
           , String "Hello world"
           )
-        , (
-            "\"Hello \\\"Haskell\\\" world\""
+        , ( "\"Hello \\\"Haskell\\\" world\""
           , String "Hello \"Haskell\" world"
           )
-        , (
-            "#\\space"
+        , ( "#\\space"
           , Character "space"
           )
-        , (
-            "#\\ "
+        , ( "#\\ "
           , Character " "
           )
         , ( "#d100.0"
