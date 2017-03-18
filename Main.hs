@@ -43,7 +43,7 @@ data LispValue = Atom String
                deriving (Eq, Show)
 
 data LispComplex =
-  LispComplex LispReal Char LispReal
+  LispComplex LispReal Sign LispReal
   deriving (Eq, Show)
 
 data LispReal =
@@ -51,6 +51,9 @@ data LispReal =
   deriving (Eq, Show)
 
 data LispRational = LispRational Integer Integer
+  deriving (Eq, Show)
+
+data Sign = Positive | Negative
   deriving (Eq, Show)
 
 parseString :: Parser LispValue
@@ -161,7 +164,9 @@ parseComplex = do
   sign <- oneOf "+-"
   RealNumber y <- parseReal
   char 'i'
-  return $ ComplexNumber (LispComplex x sign y)
+  case sign of
+    '+' -> return $ ComplexNumber (LispComplex x Positive y)
+    '-' -> return $ ComplexNumber (LispComplex x Negative y)
 
 parseList :: Parser LispValue
 parseList = liftM List $ sepBy parseExpr spaces

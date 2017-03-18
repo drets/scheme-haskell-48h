@@ -57,13 +57,13 @@ goodTestScheme = TestCase $ do
           , Bool False
           )
         , ( "100.0+100.0i"
-          , ComplexNumber (LispComplex (LispDouble 100.0) '+' (LispDouble 100.0))
+          , ComplexNumber (LispComplex (LispDouble 100.0) Positive (LispDouble 100.0))
           )
         , ( "100+100i"
-          , ComplexNumber (LispComplex (LispInteger 100) '+' (LispInteger 100))
+          , ComplexNumber (LispComplex (LispInteger 100) Positive (LispInteger 100))
           )
         , ( "100.0-100i"
-          , ComplexNumber (LispComplex (LispDouble 100.0) '-' (LispInteger 100))
+          , ComplexNumber (LispComplex (LispDouble 100.0) Negative (LispInteger 100))
           )
         , ( "(a test)"
           , List [Atom "a", Atom "test"]
