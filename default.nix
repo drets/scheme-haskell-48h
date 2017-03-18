@@ -6,7 +6,8 @@ haskell.lib.buildStackProject {
   buildInputs = [ git
                   cabal-install
                   zlib
-                  cairo
+
                   haskellPackages.parsec
-                  haskellPackages.HUnit ];
+                  haskellPackages.HUnit
+                  haskellPackages.vector ];
 }

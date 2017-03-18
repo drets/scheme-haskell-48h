@@ -2,8 +2,9 @@ module TestMain where
 
 import Test.HUnit
 import Control.Monad
-import Text.ParserCombinators.Parsec hiding (spaces, try)
 import Data.Either
+import Text.Parsec
+import qualified Data.Vector as V
 
 import Main hiding (main)
 
@@ -56,13 +57,13 @@ goodTestScheme = TestCase $ do
           , Bool False
           )
         , ( "100.0+100.0i"
-          , ComplexNumber (LispComplex (LispDouble 100.0) (LispDouble 100.0))
+          , ComplexNumber (LispComplex (LispDouble 100.0) '+' (LispDouble 100.0))
           )
         , ( "100+100i"
-          , ComplexNumber (LispComplex (LispInteger 100) (LispInteger 100))
+          , ComplexNumber (LispComplex (LispInteger 100) '+' (LispInteger 100))
           )
-        , ( "100.0+100i"
-          , ComplexNumber (LispComplex (LispDouble 100.0) (LispInteger 100))
+        , ( "100.0-100i"
+          , ComplexNumber (LispComplex (LispDouble 100.0) '-' (LispInteger 100))
           )
         , ( "(a test)"
           , List [Atom "a", Atom "test"]
@@ -75,6 +76,15 @@ goodTestScheme = TestCase $ do
           )
         , ( "(a '(quoted (dotted . list)) test)"
           , List [Atom "a", List [Atom "quote", List [Atom "quoted", DottedList [Atom "dotted"] (Atom "list")]], Atom "test"]
+          )
+        , ( "`(a test)"
+          , List [Atom "quasiquote", List [Atom "a", Atom "test"]]
+          )
+        , ( "\"\\r\""
+          , String "\r"
+          )
+        , ( "#(1 (1 2 3) 3)"
+          , Vector (V.fromList [RealNumber (LispInteger 1),List [RealNumber (LispInteger 1),RealNumber (LispInteger 2),RealNumber (LispInteger 3)],RealNumber (LispInteger 3)])
           )
         ]
 

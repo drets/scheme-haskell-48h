@@ -1,13 +1,18 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import System.Environment
-import Text.ParserCombinators.Parsec hiding (spaces, try)
-import Text.Parsec.Prim
-import Control.Monad
-import Numeric
-import Data.Foldable
-import Data.Char
+import           Control.Monad
+import           Control.Monad.ST
+import           Data.Char
+import           Data.Foldable
+import           Data.Functor
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as M
+import           Numeric
+import           System.Environment
+import           Text.Parsec.Prim
+import           Text.ParserCombinators.Parsec hiding (spaces, try)
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
@@ -28,6 +33,7 @@ main = do
 data LispValue = Atom String
                | List [LispValue]
                | DottedList [LispValue] LispValue
+               | Vector (V.Vector LispValue)
                | RealNumber LispReal
                | RationalNumber LispRational
                | ComplexNumber LispComplex
@@ -37,7 +43,7 @@ data LispValue = Atom String
                deriving (Eq, Show)
 
 data LispComplex =
-  LispComplex LispReal LispReal
+  LispComplex LispReal Char LispReal
   deriving (Eq, Show)
 
 data LispReal =
@@ -50,12 +56,15 @@ data LispRational = LispRational Integer Integer
 parseString :: Parser LispValue
 parseString = do
   char '"'
-  x <- many1 ((char '\\' >> char '"')
-              <|> newline
-              <|> tab
-              <|> (char '\\' >> char 'r')
-              <|> (char '\\' >> char '\\')
-              <|> noneOf "\"")
+  let escape c = try $ string ("\\" ++ [c])
+  x <- many1 $ choice [
+      escape '"'  $> '"'
+    , escape 'r'  $> '\r'
+    , escape 'n'  $> '\n'
+    , escape 't'  $> '\t'
+    , escape '\\' $> '\\'
+    , noneOf "\""
+    ]
   char '"'
   return $ String x
 
@@ -109,20 +118,21 @@ parseNumber =  try parseComplex
            <|> (char '#' >> parseNumberWithRadix)
 
 parseNumberWithRadix :: Parser LispValue
-parseNumberWithRadix = do
-  t <- char 'o' <|> char 'x' <|> char 'd' <|> char 'b'
-  case t of
-    'o' -> parseOctal
-    'b' -> parseBinary
-    'x' -> parseHex
-    'd' -> parseDecimal
-
+parseNumberWithRadix =
+  choice [ char 'o' >> parseOctal
+         , char 'b' >> parseBinary
+         , char 'x' >> parseHex
+         , char 'd' >> parseDecimal
+         ]
+  
 parseExpr :: Parser LispValue
 parseExpr =  try parseNumber
          <|> try (char '#' >> parseCharacter)
          <|> parseString
+         <|> try parseVector
          <|> parseAtom
          <|> parseQuoted
+         <|> parseQuasiQuote
          <|> do char '('
                 x <- try parseList <|> parseDottedList
                 char ')'
@@ -148,10 +158,10 @@ parseReal = try parseRational <|> try parseDecimal <|> parseInt
 parseComplex :: Parser LispValue
 parseComplex = do
   RealNumber x <- parseReal
-  char '+'
+  sign <- oneOf "+-"
   RealNumber y <- parseReal
   char 'i'
-  return $ ComplexNumber (LispComplex x y)
+  return $ ComplexNumber (LispComplex x sign y)
 
 parseList :: Parser LispValue
 parseList = liftM List $ sepBy parseExpr spaces
@@ -167,3 +177,23 @@ parseQuoted = do
   char '\''
   x <- parseExpr
   return $ List [Atom "quote", x]
+
+parseQuasiQuote :: Parser LispValue
+parseQuasiQuote = do
+  char '`'
+  x <- parseExpr
+  return $ List [Atom "quasiquote", x]
+
+parseVector :: Parser LispValue
+parseVector = do
+  char '#'
+  char '('
+  List x <- parseList
+  char ')'
+  return $ Vector (V.fromList x) 
+
+updateVector :: V.Vector LispValue -> Int -> LispValue -> V.Vector LispValue
+updateVector xs n x = runST $ do
+  mvector <- V.unsafeThaw xs
+  newmvector <- M.write mvector n x
+  V.unsafeFreeze mvector
