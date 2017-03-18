@@ -17,11 +17,11 @@ goodTestScheme = TestCase $ do
         , ( "10"
           , RealNumber (LispInteger 10)
           )
-        , ( "10."
-          , RealNumber (LispDouble 10.0)
+        , ( "-10.1"
+          , RealNumber (LispDouble (-10.1))
           )
         , ( "1/2"
-          , RationalNumber (LispRational 1 2)
+          , RealNumber (LispRational 1 2)
           )
         , ( "var"
           , Atom "var"

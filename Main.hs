@@ -14,6 +14,36 @@ import           System.Environment
 import           Text.Parsec.Prim
 import           Text.ParserCombinators.Parsec hiding (spaces, try)
 
+
+data LispValue = Atom String
+               | List [LispValue]
+               | DottedList [LispValue] LispValue
+               | Vector (V.Vector LispValue)
+               | RealNumber LispReal
+               | ComplexNumber LispComplex
+               | Character String
+               | String String
+               | Bool Bool
+               deriving (Eq, Show)
+
+data LispComplex = LispComplex LispReal Sign LispReal
+                 deriving (Eq, Show)
+
+data LispReal = LispDouble Double
+              | LispRational Integer Integer
+              | LispInteger Integer
+              deriving (Eq, Show)
+
+data Sign = Positive
+          | Negative
+          deriving (Eq, Show)
+
+
+main :: IO ()
+main = do
+  (expr:_) <- getArgs
+  putStrLn (readExpr expr)
+
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
@@ -24,37 +54,6 @@ readExpr input = case parse parseExpr "scheme" input of
 
 spaces :: Parser ()
 spaces = skipMany1 space
-
-main :: IO ()
-main = do
-  (expr:_) <- getArgs
-  putStrLn (readExpr expr)
-
-data LispValue = Atom String
-               | List [LispValue]
-               | DottedList [LispValue] LispValue
-               | Vector (V.Vector LispValue)
-               | RealNumber LispReal
-               | RationalNumber LispRational
-               | ComplexNumber LispComplex
-               | Character String
-               | String String
-               | Bool Bool
-               deriving (Eq, Show)
-
-data LispComplex =
-  LispComplex LispReal Sign LispReal
-  deriving (Eq, Show)
-
-data LispReal =
-  LispDouble Double | LispRat LispRational | LispInteger Integer
-  deriving (Eq, Show)
-
-data LispRational = LispRational Integer Integer
-  deriving (Eq, Show)
-
-data Sign = Positive | Negative
-  deriving (Eq, Show)
 
 parseString :: Parser LispValue
 parseString = do
@@ -81,14 +80,16 @@ parseAtom = do
     "#f" -> Bool False
     _    -> Atom atom
 
-
 binToDec :: String -> Int
 binToDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
 
 parseInt :: Parser LispValue
 parseInt = do
+  s <- option '+' (char '-')
   x <- many1 digit
-  return $ RealNumber (LispInteger (read x))
+  case s of
+    '+' -> return $ RealNumber (LispInteger (read x))
+    '-' -> return $ RealNumber (LispInteger (negate (read x)))
 
 parseOctal :: Parser LispValue
 parseOctal = do
@@ -104,11 +105,14 @@ parseHex = do
 
 parseDecimal :: Parser LispValue
 parseDecimal = do
+  s <- option '+' (char '-')
   x <- many1 digit
   char '.'
-  y <- many digit
+  y <- many1 digit
   let first:_ = readFloat (x ++ "." ++ y)
-  return $ RealNumber (LispDouble (fst first))
+  case s of
+    '+' -> return $ RealNumber (LispDouble (fst first))
+    '-' -> return $ RealNumber (LispDouble (negate (fst first)))
 
 parseBinary :: Parser LispValue
 parseBinary = do
@@ -129,17 +133,19 @@ parseNumberWithRadix =
          ]
   
 parseExpr :: Parser LispValue
-parseExpr =  try parseNumber
-         <|> try (char '#' >> parseCharacter)
-         <|> parseString
-         <|> try parseVector
-         <|> parseAtom
-         <|> parseQuoted
-         <|> parseQuasiQuote
-         <|> do char '('
-                x <- try parseList <|> parseDottedList
-                char ')'
-                return x
+parseExpr =
+  choice [ try parseNumber
+         , try (char '#' >> parseCharacter)
+         , parseString
+         , try parseVector
+         , parseAtom
+         , parseQuoted
+         , parseQuasiQuote
+         , do char '('
+              x <- try parseList <|> parseDottedList
+              char ')'
+              return x
+         ]
 
 parseCharacter :: Parser LispValue
 parseCharacter = do
@@ -153,7 +159,7 @@ parseRational = do
   RealNumber (LispInteger numerator) <- parseInt
   char '/'
   RealNumber (LispInteger denominator) <- parseInt
-  return $ RationalNumber (LispRational numerator denominator)
+  return $ RealNumber (LispRational numerator denominator)
 
 parseReal :: Parser LispValue
 parseReal = try parseRational <|> try parseDecimal <|> parseInt
