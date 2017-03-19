@@ -50,7 +50,7 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 readExpr :: String -> LispValue
 readExpr input = case parse parseExpr "scheme" input of
-  Left err -> String $ "No match: " ++ show err
+  Left err -> error $ "No match: " ++ show err
   Right val -> val
 
 spaces :: Parser ()
@@ -210,7 +210,7 @@ updateVector xs n x = runST $ do
   V.unsafeFreeze mvector
 
 showVal :: LispValue -> String
-showVal (String contents) = "\"" ++ contents ++ "\""
+showVal (String contents) = show contents
 showVal (Atom name) = name
 showVal (RealNumber (LispInteger number)) = show number
 showVal (RealNumber (LispDouble number)) = show number
@@ -246,9 +246,9 @@ stringToSymbol (String x) = Atom $ x
 stringToSymbol x          = stringToSymbol $ eval x
 
 symbolToString :: LispValue -> LispValue
-symbolToString (Atom x)                        = String x
-symbolToString (List (Atom "quote":Atom x:[])) = String $ toLower <$> x
-symbolToString x                               = symbolToString $ eval x
+symbolToString (Atom x)                      = String x
+symbolToString (List [Atom "quote", Atom x]) = String $ map toLower x
+symbolToString x                             = symbolToString $ eval x
 
 isList :: LispValue -> LispValue
 isList (List _) = Bool True
