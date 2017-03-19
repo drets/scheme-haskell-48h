@@ -24,7 +24,10 @@ data LispValue = Atom String
                | Character String
                | String String
                | Bool Bool
-               deriving (Eq, Show)
+               deriving (Eq)
+
+instance Show LispValue where
+  show = showVal
 
 data LispComplex = LispComplex LispReal Sign LispReal
                  deriving (Eq, Show)
@@ -40,17 +43,15 @@ data Sign = Positive
 
 
 main :: IO ()
-main = do
-  (expr:_) <- getArgs
-  putStrLn (readExpr expr)
+main = getArgs >>= print . eval . readExpr . head
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
-readExpr :: String -> String
+readExpr :: String -> LispValue
 readExpr input = case parse parseExpr "scheme" input of
-  Left err -> "No match: " ++ show err
-  Right val -> "Found value:\n" ++ show val
+  Left err -> String $ "No match: " ++ show err
+  Right val -> val
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -208,3 +209,54 @@ updateVector xs n x = runST $ do
   mvector <- V.unsafeThaw xs
   newmvector <- M.write mvector n x
   V.unsafeFreeze mvector
+
+showVal :: LispValue -> String
+showVal (String contents) = "\"" ++ contents ++ "\""
+showVal (Atom name) = name
+showVal (RealNumber (LispInteger number)) = show number
+showVal (RealNumber (LispDouble number)) = show number
+showVal (RealNumber (LispRational num denom)) = show num ++ "\\" ++ show denom
+showVal (ComplexNumber (LispComplex x Positive y)) = show x ++ "+" ++ show y ++ "i"
+showVal (Bool True) = "#t"
+showVal (Bool False) = "#f"
+showVal (List contents) = "(" ++ unwordsList contents ++ ")"
+showVal (DottedList head tail) = "(" ++ unwordsList head ++ " . " ++ showVal tail ++ ")"
+
+unwordsList :: [LispValue] -> String
+unwordsList = unwords . map showVal
+
+eval :: LispValue -> LispValue
+eval val@(String _) = val
+eval val@(ComplexNumber _) = val
+eval val@(RealNumber _) = val
+eval val@(Bool _) = val
+eval (List [Atom "quote", val]) = val
+eval (List (Atom func : args)) = apply func $ map eval args
+
+apply :: String -> [LispValue] -> LispValue
+apply func args = maybe (Bool False) ($ args) $ lookup func primitivies
+
+primitivies :: [(String, [LispValue] -> LispValue)]
+primitivies = [ ("+", numericBinop (+))
+              , ("-", numericBinop (-))
+              , ("*", numericBinop (*))
+              , ("/", numericBinop div)
+              , ("mod", numericBinop mod)
+              , ("quotient", numericBinop quot)
+              , ("remainder", numericBinop rem)
+              ]
+
+numericBinop :: (Integer -> Integer -> Integer) -> [LispValue] -> LispValue
+numericBinop op params = RealNumber $ LispInteger $ foldl1 op $ map unpackNum params
+
+unpackNum :: LispValue -> Integer
+unpackNum (RealNumber (LispInteger n)) = n
+unpackNum (String n) =
+  let parsed = reads n :: [(Integer, String)] in
+    if null parsed
+       then 0
+       else fst $ parsed !! 0
+unpackNum (List [n]) = unpackNum n
+unpackNum _ = 0
+
+

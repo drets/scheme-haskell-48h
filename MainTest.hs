@@ -8,8 +8,8 @@ import qualified Data.Vector as V
 
 import Main hiding (main)
 
-goodTestScheme :: Test
-goodTestScheme = TestCase $ do
+goodTestParse :: Test
+goodTestParse = TestCase $ do
   let testCases =
         [ ( "1"
           , RealNumber (LispInteger 1)
@@ -89,19 +89,40 @@ goodTestScheme = TestCase $ do
         ]
 
   forM_ testCases $ do
-    \(input, expected) -> assertEqual "" (Right expected) (run input)
+    \(input, expected) -> assertEqual "" (Right expected) (runParse input)
 
-badTestScheme :: Test
-badTestScheme = TestCase $ do
+badTestParse :: Test
+badTestParse = TestCase $ do
   let testCases =
         [ "(a '(imbalanced parens)"
         ]
 
   forM_ testCases $ do
-    \input -> assert (isLeft (run input))
+    \input -> assert (isLeft (runParse input))
 
-run :: String -> Either ParseError LispValue
-run = parse parseExpr "scheme"
+goodTestEval :: Test
+goodTestEval = TestCase $ do
+  let testCases =
+        [
+          ( "(+ 2 2)"
+          , RealNumber (LispInteger 4)
+          ),
+          ( "(+ 2 (- 4 1))"
+          , RealNumber (LispInteger 5)
+          ),
+          ( "(- (+ 4 6 3) 3 5 2)"
+          , RealNumber (LispInteger 3)
+          )
+        ]
+
+  forM_ testCases $ do
+    \(input, expected) -> assertEqual "" expected (runEval input)
+
+runParse :: String -> Either ParseError LispValue
+runParse = parse parseExpr "scheme"
+
+runEval :: String -> LispValue
+runEval = eval . readExpr
 
 main :: IO Counts
-main = runTestTT $ TestList [goodTestScheme, badTestScheme]
+main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval]
