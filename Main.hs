@@ -24,10 +24,10 @@ data LispValue = Atom String
                | Character String
                | String String
                | Bool Bool
-               deriving (Eq)
+               deriving (Eq, Show)
 
-instance Show LispValue where
-  show = showVal
+-- instance Show LispValue where
+--   show = showVal
 
 data LispComplex = LispComplex LispReal Sign LispReal
                  deriving (Eq, Show)
@@ -137,8 +137,8 @@ parseExpr :: Parser LispValue
 parseExpr =
   choice [ try parseNumber
          , try (char '#' >> parseCharacter)
-         , parseString
          , try parseVector
+         , parseString
          , parseAtom
          , parseQuoted
          , parseQuasiQuote
@@ -198,8 +198,7 @@ parseQuasiQuote = do
 
 parseVector :: Parser LispValue
 parseVector = do
-  char '#'
-  char '('
+  string "'#("
   List x <- parseList
   char ')'
   return $ Vector (V.fromList x) 
@@ -226,12 +225,54 @@ unwordsList :: [LispValue] -> String
 unwordsList = unwords . map showVal
 
 eval :: LispValue -> LispValue
-eval val@(String _) = val
+eval val@(String _)        = val
 eval val@(ComplexNumber _) = val
-eval val@(RealNumber _) = val
-eval val@(Bool _) = val
-eval (List [Atom "quote", val]) = val
-eval (List (Atom func : args)) = apply func $ map eval args
+eval val@(RealNumber _)    = val
+eval val@(Bool _)          = val
+eval (List [Atom "quote", val])    = val
+eval (List [Atom "boolean?", val]) = isBoolean val
+eval (List [Atom "string?", val])  = isString val
+eval (List [Atom "number?", val])  = isNum val
+eval (List [Atom "char?", val])    = isChar val
+eval (List [Atom "symbol?", val])  = isSymb val
+eval (List [Atom "vector?", val])  = isVector val
+eval (List [Atom "list?", val])    = isList val
+eval (List (Atom func : args))     = apply func $ map eval args
+
+isList :: LispValue -> LispValue
+isList (List _) = Bool True
+isList _        = Bool False
+
+isVector :: LispValue -> LispValue
+isVector (Vector _) = Bool True
+isVector _          = Bool False
+
+isSymb :: LispValue -> LispValue
+isSymb (Atom _)           = Bool True
+isSymb (List (Atom _:xs)) = Bool $ all (\x -> toBool (isSymb x)) xs
+isSymb _                  = Bool False
+
+toBool :: LispValue -> Bool
+toBool (Bool True)  = True
+toBool (Bool False) = False
+toBool _          = False
+
+isChar :: LispValue -> LispValue
+isChar (Character _) = Bool True
+isChar _             = Bool False
+
+isBoolean :: LispValue -> LispValue
+isBoolean (Bool _) = Bool True
+isBoolean _        = Bool False
+
+isString :: LispValue -> LispValue
+isString (String _) = Bool True
+isString _          = Bool False
+
+isNum :: LispValue -> LispValue
+isNum (ComplexNumber _) = Bool True
+isNum (RealNumber _) = Bool True
+isNum _ = Bool False
 
 apply :: String -> [LispValue] -> LispValue
 apply func args = maybe (Bool False) ($ args) $ lookup func primitivies
@@ -258,5 +299,3 @@ unpackNum (String n) =
        else fst $ parsed !! 0
 unpackNum (List [n]) = unpackNum n
 unpackNum _ = 0
-
-

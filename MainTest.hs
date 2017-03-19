@@ -83,7 +83,7 @@ goodTestParse = TestCase $ do
         , ( "\"\\r\""
           , String "\r"
           )
-        , ( "#(1 (1 2 3) 3)"
+        , ( "'#(1 (1 2 3) 3)"
           , Vector (V.fromList [RealNumber (LispInteger 1),List [RealNumber (LispInteger 1),RealNumber (LispInteger 2),RealNumber (LispInteger 3)],RealNumber (LispInteger 3)])
           )
         ]
@@ -112,6 +112,54 @@ goodTestEval = TestCase $ do
           ),
           ( "(- (+ 4 6 3) 3 5 2)"
           , RealNumber (LispInteger 3)
+          ),
+          ( "(boolean? #f)"
+          , Bool True
+          ),
+          ( "(boolean? 0)"
+          , Bool False
+          ),
+          ("(boolean? '())"
+          , Bool False
+          ),
+          ( "(string? \"Hello world\")"
+          , Bool True
+          ),
+          ( "(string? #f)"
+          , Bool False
+          ),
+          ( "(number? #f)"
+          , Bool False
+          ),
+          ( "(number? 100)"
+          , Bool True
+          ),
+          ( "(number? 100/10)"
+          , Bool True
+          ),
+          ( "(number? 100+10i)"
+          , Bool True
+          ),
+          ( "(number? 100-10i)"
+          , Bool True
+          ),
+          ( "(symbol? 'foo)"
+          , Bool True
+          ),
+          ( "(symbol? (car '(a b)))"
+          , Bool True
+          ),
+          ( "(symbol? 'nil)"
+          , Bool True
+          ),
+          ( "(symbol? \"bar\")"
+          , Bool False
+          ),
+          ( "(symbol? '()))"
+          , Bool False
+          ),
+          ( "(symbol? #f)"
+          , Bool False
           )
         ]
 
