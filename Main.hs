@@ -271,8 +271,8 @@ isString _          = Bool False
 
 isNum :: LispValue -> LispValue
 isNum (ComplexNumber _) = Bool True
-isNum (RealNumber _) = Bool True
-isNum _ = Bool False
+isNum (RealNumber _)    = Bool True
+isNum _                 = Bool False
 
 apply :: String -> [LispValue] -> LispValue
 apply func args = maybe (Bool False) ($ args) $ lookup func primitivies
@@ -292,10 +292,4 @@ numericBinop op params = RealNumber $ LispInteger $ foldl1 op $ map unpackNum pa
 
 unpackNum :: LispValue -> Integer
 unpackNum (RealNumber (LispInteger n)) = n
-unpackNum (String n) =
-  let parsed = reads n :: [(Integer, String)] in
-    if null parsed
-       then 0
-       else fst $ parsed !! 0
-unpackNum (List [n]) = unpackNum n
 unpackNum _ = 0
