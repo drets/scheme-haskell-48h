@@ -160,6 +160,15 @@ goodTestEval = TestCase $ do
           ),
           ( "(symbol? #f)"
           , Bool False
+          ),
+          ( "(symbol->string 'flying-fish)"
+          , String "flying-fish"
+          ),
+          ( "(symbol->string 'Martin)"
+          , String "martin"
+          ),
+          ( "(symbol->string (string->symbol \"Malvina\"))"
+          , String "Malvina"
           )
         ]
 

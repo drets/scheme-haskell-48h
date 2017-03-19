@@ -24,10 +24,10 @@ data LispValue = Atom String
                | Character String
                | String String
                | Bool Bool
-               deriving (Eq, Show)
+               deriving (Eq)
 
--- instance Show LispValue where
---   show = showVal
+instance Show LispValue where
+  show = showVal
 
 data LispComplex = LispComplex LispReal Sign LispReal
                  deriving (Eq, Show)
@@ -229,15 +229,26 @@ eval val@(String _)        = val
 eval val@(ComplexNumber _) = val
 eval val@(RealNumber _)    = val
 eval val@(Bool _)          = val
-eval (List [Atom "quote", val])    = val
-eval (List [Atom "boolean?", val]) = isBoolean val
-eval (List [Atom "string?", val])  = isString val
-eval (List [Atom "number?", val])  = isNum val
-eval (List [Atom "char?", val])    = isChar val
-eval (List [Atom "symbol?", val])  = isSymb val
-eval (List [Atom "vector?", val])  = isVector val
-eval (List [Atom "list?", val])    = isList val
-eval (List (Atom func : args))     = apply func $ map eval args
+eval (List [Atom "quote", val])          = val
+eval (List [Atom "boolean?", val])       = isBoolean val
+eval (List [Atom "string?", val])        = isString val
+eval (List [Atom "string->symbol", val]) = stringToSymbol val
+eval (List [Atom "number?", val])        = isNum val
+eval (List [Atom "char?", val])          = isChar val
+eval (List [Atom "symbol?", val])        = isSymb val
+eval (List [Atom "symbol->string", val]) = symbolToString val
+eval (List [Atom "vector?", val])        = isVector val
+eval (List [Atom "list?", val])          = isList val
+eval (List (Atom func : args))           = apply func $ map eval args
+
+stringToSymbol :: LispValue -> LispValue
+stringToSymbol (String x) = Atom $ x
+stringToSymbol x          = stringToSymbol $ eval x
+
+symbolToString :: LispValue -> LispValue
+symbolToString (Atom x)                        = String x
+symbolToString (List (Atom "quote":Atom x:[])) = String $ toLower <$> x
+symbolToString x                               = symbolToString $ eval x
 
 isList :: LispValue -> LispValue
 isList (List _) = Bool True
