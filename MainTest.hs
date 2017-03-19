@@ -8,8 +8,8 @@ import qualified Data.Vector as V
 
 import Main hiding (main)
 
-goodTestScheme :: Test
-goodTestScheme = TestCase $ do
+goodTestParse :: Test
+goodTestParse = TestCase $ do
   let testCases =
         [ ( "1"
           , RealNumber (LispInteger 1)
@@ -83,25 +83,103 @@ goodTestScheme = TestCase $ do
         , ( "\"\\r\""
           , String "\r"
           )
-        , ( "#(1 (1 2 3) 3)"
+        , ( "'#(1 (1 2 3) 3)"
           , Vector (V.fromList [RealNumber (LispInteger 1),List [RealNumber (LispInteger 1),RealNumber (LispInteger 2),RealNumber (LispInteger 3)],RealNumber (LispInteger 3)])
           )
         ]
 
   forM_ testCases $ do
-    \(input, expected) -> assertEqual "" (Right expected) (run input)
+    \(input, expected) -> assertEqual "" (Right expected) (runParse input)
 
-badTestScheme :: Test
-badTestScheme = TestCase $ do
+badTestParse :: Test
+badTestParse = TestCase $ do
   let testCases =
         [ "(a '(imbalanced parens)"
         ]
 
   forM_ testCases $ do
-    \input -> assert (isLeft (run input))
+    \input -> assert (isLeft (runParse input))
 
-run :: String -> Either ParseError LispValue
-run = parse parseExpr "scheme"
+goodTestEval :: Test
+goodTestEval = TestCase $ do
+  let testCases =
+        [
+          ( "(+ 2 2)"
+          , RealNumber (LispInteger 4)
+          ),
+          ( "(+ 2 (- 4 1))"
+          , RealNumber (LispInteger 5)
+          ),
+          ( "(- (+ 4 6 3) 3 5 2)"
+          , RealNumber (LispInteger 3)
+          ),
+          ( "(boolean? #f)"
+          , Bool True
+          ),
+          ( "(boolean? 0)"
+          , Bool False
+          ),
+          ("(boolean? '())"
+          , Bool False
+          ),
+          ( "(string? \"Hello world\")"
+          , Bool True
+          ),
+          ( "(string? #f)"
+          , Bool False
+          ),
+          ( "(number? #f)"
+          , Bool False
+          ),
+          ( "(number? 100)"
+          , Bool True
+          ),
+          ( "(number? 100/10)"
+          , Bool True
+          ),
+          ( "(number? 100+10i)"
+          , Bool True
+          ),
+          ( "(number? 100-10i)"
+          , Bool True
+          ),
+          ( "(symbol? 'foo)"
+          , Bool True
+          ),
+          ( "(symbol? (car '(a b)))"
+          , Bool True
+          ),
+          ( "(symbol? 'nil)"
+          , Bool True
+          ),
+          ( "(symbol? \"bar\")"
+          , Bool False
+          ),
+          ( "(symbol? '()))"
+          , Bool False
+          ),
+          ( "(symbol? #f)"
+          , Bool False
+          ),
+          ( "(symbol->string 'flying-fish)"
+          , String "flying-fish"
+          ),
+          ( "(symbol->string 'Martin)"
+          , String "martin"
+          ),
+          ( "(symbol->string (string->symbol \"Malvina\"))"
+          , String "Malvina"
+          )
+        ]
+
+  forM_ testCases $ do
+    \(input, expected) -> assertEqual "" expected (runEval input)
+
+runParse :: String -> Either ParseError LispValue
+runParse = parse parseExpr "scheme"
+
+runEval :: String -> LispValue
+runEval = eval . readExpr
 
 main :: IO Counts
-main = runTestTT $ TestList [goodTestScheme, badTestScheme]
+main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval]
