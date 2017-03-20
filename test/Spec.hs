@@ -170,6 +170,36 @@ goodTestEval = TestCase $ do
           ),
           ( "(symbol->string (string->symbol \"Malvina\"))"
           , String "Malvina"
+          ),
+          ( "(if (> 2 3) \"no\" \"yes\")"
+          , String "yes"
+          ),
+          ( "(if (= 3 3) (+ 2 3 (- 5 1)) \"unequal\")"
+          , RealNumber (LispInteger 9)
+          ),
+          ( "(cdr '(a simple test))"
+          , List [Atom "simple", Atom "test"]
+          ),
+          ( "(car (cdr '(a simple test)))"
+          , Atom "simple"
+          ),
+          ( "(car '((this is) a test))"
+          , List [Atom "this", Atom "is"]
+          ),
+          ( "(cons '(this is) 'test)"
+          , DottedList [List [Atom "this",Atom "is"]] (Atom "test")
+          ),
+          ( "(cons '(this is) '())"
+          , List [List [Atom "this",Atom "is"]]
+          ),
+          ( "(eqv? 1 3)"
+          , Bool False
+          ),
+          ( "(eqv? 3 3)"
+          , Bool True
+          ),
+          ( "(eqv? 'atom 'atom)"
+          , Bool True
           )
         ]
 
