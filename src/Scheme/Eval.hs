@@ -197,17 +197,20 @@ eqv [(ComplexNumber arg1), (ComplexNumber arg2)] = return $ Bool $ arg1 == arg2
 eqv [(String arg1), (String arg2)]               = return $ Bool $ arg1 == arg2
 eqv [(Atom arg1), (Atom arg2)]                   = return $ Bool $ arg1 == arg2
 eqv [(DottedList xs x), (DottedList ys y)]       = eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [(List arg1), (List arg2)]                   = return $ Bool $ (length arg1 == length arg2) &&
-                                                                   (all eqvPair $ zip arg1 arg2)
-  where
-    eqvPair (x1, x2) =
-      case eqv [x1, x2] of
-        Left _           -> False
-        Right (Bool val) -> val
+eqv [(List arg1), (List arg2)]                   = compareList arg1 arg2 eqv
 eqv [_, _]                                       = return $ Bool False
 eqv badArgList                                   = throwError $ NumArgs 2 badArgList
 
 data Unpacker = forall a. Eq a => AnyUnpacker (LispValue -> ThrowsError a)
+
+compareList :: [LispValue] -> [LispValue] -> ([LispValue] -> ThrowsError LispValue) -> ThrowsError LispValue
+compareList arg1 arg2 eq_func = return $ Bool $ (length arg1 == length arg2) &&
+                                                (all eqvPair $ zip arg1 arg2)
+  where
+    eqvPair (x1, x2) =
+      case eq_func [x1, x2] of
+        Left _           -> False
+        Right (Bool val) -> val
 
 unpackEquals :: LispValue -> LispValue -> Unpacker -> ThrowsError Bool
 unpackEquals arg1 arg2 (AnyUnpacker unpacker) = (do
@@ -216,6 +219,8 @@ unpackEquals arg1 arg2 (AnyUnpacker unpacker) = (do
   return $ unpacked1 == unpacked2) `catchError` (const $ return False)
 
 equal :: [LispValue] -> ThrowsError LispValue
+equal [(DottedList xs x), (DottedList ys y)] = equal [List $ xs ++ [x], List $ ys ++ [y]]
+equal [(List arg1), (List arg2)]             = compareList arg1 arg2 equal
 equal [arg1, arg2] = do
   primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
                      [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
