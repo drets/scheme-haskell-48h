@@ -16,7 +16,8 @@ eval (List [Atom "if", predic, conseq, alt]) = do
   result <- eval predic
   case result of
     Bool False -> eval alt
-    _          -> eval conseq
+    Bool True  -> eval conseq
+    x          -> throwError $ TypeMismatch "boolean" x
 eval (List [Atom "quote", val])          = return val
 eval (List [Atom "boolean?", val])       = return $ isBoolean val
 eval (List [Atom "string?", val])        = return $ isString val

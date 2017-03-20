@@ -204,18 +204,28 @@ goodTestEval = TestCase $ do
         ]
 
   forM_ testCases $ do
-    \(input, expected) -> assertEqual "" expected (runEval input)
+    \(input, expected) -> do
+      let Right actual = runEval input in
+        assertEqual "" expected actual
+
+badTestEval :: Test
+badTestEval = TestCase $ do
+  let testCases =
+        [ "(if 1 (+ 2 3 (- 5 1)) \"unequal\")"
+        ]
+
+  forM_ testCases $ do
+    \input -> do
+      assert $ isLeft (runEval input)
 
 runParse :: String -> Either ParseError LispValue
 runParse = parse parseExpr "scheme"
 
-runEval :: String -> LispValue
+runEval :: String -> ThrowsError LispValue
 runEval input = case readExpr input of
-  Right val -> case eval val of
-    Right v  -> v
-    Left err -> error $ show err
+  Right val -> eval val
   Left err  -> error $ show err
 
 
 main :: IO Counts
-main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval]
+main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval, badTestEval]
