@@ -86,20 +86,47 @@ primitivies = [ ("+", numericBinop (+))
               , ("mod", numericBinop mod)
               , ("quotient", numericBinop quot)
               , ("remainder", numericBinop rem)
-              -- , ("=", numBoolBinop (==))
-              -- , ("<", numBoolBinop (<))
-              -- , (">", numBoolBinop (>))
-              -- , ("/=", numBoolBinop (/=))
-              -- , (">=", numBoolBinop (>=))
-              -- , ("<=", numBoolBinop (<=))
-              -- , ("&&", boolBoolBinop (&&))
-              -- , ("||", boolBoolBinop (||))
-              -- , ("string=?", strBoolBinop (==))
-              -- , ("string<?", strBoolBinop (<))
-              -- , ("string>?", strBoolBinop (>))
-              -- , ("string<=?", strBoolBinop (<=))
-              -- , ("string>=?", strBoolBinop (>=))
+              , ("=", numBoolBinop (==))
+              , ("<", numBoolBinop (<))
+              , (">", numBoolBinop (>))
+              , ("/=", numBoolBinop (/=))
+              , (">=", numBoolBinop (>=))
+              , ("<=", numBoolBinop (<=))
+              , ("&&", boolBoolBinop (&&))
+              , ("||", boolBoolBinop (||))
+              , ("string=?", strBoolBinop (==))
+              , ("string<?", strBoolBinop (<))
+              , ("string>?", strBoolBinop (>))
+              , ("string<=?", strBoolBinop (<=))
+              , ("string>=?", strBoolBinop (>=))
               ]
+
+boolBinop :: (LispValue -> ThrowsError a) -> (a -> a -> Bool) -> [LispValue] -> ThrowsError LispValue
+boolBinop unpacker op args = if length args /= 2
+                             then throwError $ NumArgs 2 args
+                             else do left <- unpacker $ args !! 0
+                                     right <- unpacker $ args !! 1
+                                     return $ Bool $ left `op` right
+
+numBoolBinop = boolBinop unpackNum
+strBoolBinop = boolBinop unpackStr
+boolBoolBinop = boolBinop unpackBool
+
+unpackStr :: LispValue -> ThrowsError String
+unpackStr (String s)                             = return s
+unpackStr (RealNumber (LispInteger s))           = return $ show s
+unpackStr (Bool s)                               = return $ show s
+unpackStr (ComplexNumber (LispComplex x sign y)) = do
+  x' <- unpackStr (RealNumber x)
+  y' <- unpackStr (RealNumber y)
+  case sign of
+    Positive -> return $ x' ++ "+" ++ y'
+    Negative -> return $ x' ++ "-" ++ y'
+unpackStr notString                              = throwError $ TypeMismatch "string" notString
+
+unpackBool :: LispValue -> ThrowsError Bool
+unpackBool (Bool b) = return b
+unpackBool notBool  = throwError $ TypeMismatch "boolean" notBool
 
 numericBinop :: (Integer -> Integer -> Integer) -> [LispValue] -> ThrowsError LispValue
 numericBinop _ []              = throwError $ NumArgs 2 []
