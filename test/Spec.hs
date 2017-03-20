@@ -1,12 +1,13 @@
-module TestMain where
-
-import Test.HUnit
-import Control.Monad
-import Data.Either
-import Text.Parsec
+import           Control.Monad
+import           Data.Either
 import qualified Data.Vector as V
+import           Test.HUnit
+import           Text.Parsec
 
-import Main hiding (main)
+import           Scheme.Parser
+import           Scheme.Eval
+import           Scheme.Types
+
 
 goodTestParse :: Test
 goodTestParse = TestCase $ do
@@ -179,7 +180,12 @@ runParse :: String -> Either ParseError LispValue
 runParse = parse parseExpr "scheme"
 
 runEval :: String -> LispValue
-runEval = eval . readExpr
+runEval input = case readExpr input of
+  Right val -> case eval val of
+    Right v  -> v
+    Left err -> error $ show err
+  Left err  -> error $ show err
+
 
 main :: IO Counts
 main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval]

@@ -5,9 +5,5 @@ haskell.lib.buildStackProject {
   ghc = haskellPackages.ghc;
   buildInputs = [ git
                   cabal-install
-                  zlib
-
-                  haskellPackages.parsec
-                  haskellPackages.HUnit
-                  haskellPackages.vector ];
+                  zlib ];
 }
