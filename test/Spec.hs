@@ -200,6 +200,27 @@ goodTestEval = TestCase $ do
           ),
           ( "(eqv? 'atom 'atom)"
           , Bool True
+          ),
+          ( "(cond ((> 3 2) 'greater) (< 3 2) 'less)"
+          , Atom "greater"
+          ),
+          ( "(cond ((> 3 2) 'g 'great 'greater) (< 3 2) 'less)"
+          , Atom "greater"
+          ),
+          ( "(cond ((< 3 2) 'less) ((= 3 3) 'equal))"
+          , Atom "equal"
+          ),
+          ( "(cond ((> 3 3) 'greater) ((< 3 3) 'less) (else 'equal))"
+          , Atom "equal"
+          ),
+          ( "(cond ((> 3 3)))"
+          , List [Atom ">",RealNumber (LispInteger 3),RealNumber (LispInteger 3)]
+          ),
+          ( "(case (* 2 3) ((2 3 5 7) 'prime) ((1 4 6 8 9) 'composite))"
+          , Atom "composite"
+          ),
+          ( "(case (car '(c d)) ((a e i o u) 'vowel) ((w y) 'semivowel) (else 'consonant)) "
+          , Atom "consonant"
           )
         ]
 
@@ -212,6 +233,8 @@ badTestEval :: Test
 badTestEval = TestCase $ do
   let testCases =
         [ "(if 1 (+ 2 3 (- 5 1)) \"unequal\")"
+        , "(cond ((< 3 2) 'less) ((< 3 3) 'less))"
+        , "(case (car '(c d)) ((a) 'a) ((b) 'b))"
         ]
 
   forM_ testCases $ do

@@ -18,6 +18,8 @@ eval (List [Atom "if", predic, conseq, alt]) = do
     Bool False -> eval alt
     Bool True  -> eval conseq
     x          -> throwError $ TypeMismatch "boolean" x
+eval (List (Atom "cond" : clauses))      = cond clauses
+eval (List (Atom "case" : clauses))      = ccase clauses
 eval (List [Atom "quote", val])          = return val
 eval (List [Atom "boolean?", val])       = return $ isBoolean val
 eval (List [Atom "string?", val])        = return $ isString val
@@ -112,6 +114,7 @@ primitivies = [ ("+", numericBinop (+))
               , ("eq?", eqv)
               , ("eqv?", eqv)
               , ("equal?", equal)
+              , ("cond", cond)
               ]
 
 boolBinop :: (LispValue -> ThrowsError a) -> (a -> a -> Bool) -> [LispValue] -> ThrowsError LispValue
@@ -227,3 +230,47 @@ equal [arg1, arg2] = do
   eqvEquals <- eqv [arg1, arg2]
   return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList
+
+-- since we want to fail if <test> returns not a bool doesn't make sense to implement alternate form (<test> => <expression>)
+cond :: [LispValue] -> ThrowsError LispValue
+cond [] = throwError $ Default "all <test>s evaluate to false values"
+cond [List ((Atom "else"):expressions)] = evalExpressions expressions
+cond (List (test:expressions):clauses) = cond' test expressions clauses
+cond bad = throwError $ Default $ "cond eval error: " ++ show bad
+
+cond' :: LispValue -> [LispValue] -> [LispValue] -> ThrowsError LispValue
+cond' test []          _  = return $ test
+cond' test expressions xs = do
+  result <- eval test
+  case result of
+    Bool True  -> evalExpressions expressions
+    Bool False -> cond xs
+    x          -> throwError $ TypeMismatch "boolean" x
+
+evalExpressions :: [LispValue] -> ThrowsError LispValue
+evalExpressions []     =  throwError $ Default "evalExpressions error"
+evalExpressions [x]    = eval x
+evalExpressions (x:xs) = eval x >> evalExpressions xs
+
+ccase :: [LispValue] -> ThrowsError LispValue
+ccase [] = throwError $ Default "all <test>s evaluate to false values"
+ccase (List key:clauses) = do
+  res <- eval (List key)
+  ccase' clauses res
+ccase bad = throwError $ Default $ "case eval error: " ++ show bad
+
+ccase' :: [LispValue] -> LispValue -> ThrowsError LispValue
+ccase' [] _ = throwError $ Default "all <test>s evaluate to false values"
+ccase' [List ((Atom "else"):expressions)] _ = evalExpressions expressions
+ccase' (List ((List datums):expressions):clauses) key = do
+  if any (compareDatum key) datums
+    then
+      evalExpressions expressions
+    else
+      ccase' clauses key
+ccase' bad _ = throwError $ Default $ "case eval error: " ++ show bad
+
+compareDatum :: LispValue -> LispValue -> Bool
+compareDatum key_res datum = case eqv [datum, key_res] of
+  Right (Bool res) -> res
+  _                -> False
