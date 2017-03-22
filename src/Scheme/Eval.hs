@@ -12,26 +12,106 @@ eval val@(String _)        = return val
 eval val@(ComplexNumber _) = return val
 eval val@(RealNumber _)    = return val
 eval val@(Bool _)          = return val
+eval val@(Character _)     = return val
 eval (List [Atom "if", predic, conseq, alt]) = do
   result <- eval predic
   case result of
     Bool False -> eval alt
     Bool True  -> eval conseq
     x          -> throwError $ TypeMismatch "boolean" x
-eval (List (Atom "cond" : clauses))      = cond clauses
-eval (List (Atom "case" : clauses))      = ccase clauses
-eval (List [Atom "quote", val])          = return val
-eval (List [Atom "boolean?", val])       = return $ isBoolean val
-eval (List [Atom "string?", val])        = return $ isString val
-eval (List [Atom "string->symbol", val]) = return $ stringToSymbol val
-eval (List [Atom "number?", val])        = return $ isNum val
-eval (List [Atom "char?", val])          = return $ isChar val
-eval (List [Atom "symbol?", val])        = return $ isSymb val
-eval (List [Atom "symbol->string", val]) = return $ symbolToString val
-eval (List [Atom "vector?", val])        = return $ isVector val
-eval (List [Atom "list?", val])          = return $ isList val
-eval (List (Atom func : args))           = mapM eval args >>= apply func
+eval (List (Atom "cond" : clauses))       = cond clauses
+eval (List (Atom "case" : clauses))       = ccase clauses
+eval (List [Atom "quote", val])           = return val
+eval (List [Atom "boolean?", val])        = return $ isBoolean val
+eval (List [Atom "string?", val])         = return $ isString val
+eval (List [Atom "string->list", str])    = stringToList str
+eval (List [Atom "string->copy", str])    = stringCopy str
+eval (List [Atom "list->string", lst])    = listToString lst
+eval (List [Atom "string->symbol", val])  = return $ stringToSymbol val
+eval (List [Atom "string-length", str])   = stringLength str
+eval (List [Atom "string-ref", str, k])   = stringRef str k
+eval (List (Atom "string-append":strs))   = stringAppend strs
+eval (List (Atom "string":chars))         = string chars
+eval (List [Atom "substring", str, start, end]) =
+  substring str start end
+eval (List [Atom "make-string", k])       = makeString k
+eval (List [Atom "make-string", k, char]) = makeStringWithChar k char
+eval (List [Atom "number?", val])         = return $ isNum val
+eval (List [Atom "char?", val])           = return $ isChar val
+eval (List [Atom "symbol?", val])         = return $ isSymb val
+eval (List [Atom "symbol->string", val])  = return $ symbolToString val
+eval (List [Atom "vector?", val])         = return $ isVector val
+eval (List [Atom "list?", val])           = return $ isList val
+eval (List (Atom func : args))            = mapM eval args >>= apply func
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
+
+stringCopy :: LispValue -> ThrowsError LispValue
+stringCopy (String s) = return $ String s
+stringCopy x          = throwError $ TypeMismatch "string" x
+
+listToString :: LispValue -> ThrowsError LispValue
+listToString (List [Atom "quote", lst]) = listToString lst
+listToString (List lst)
+  | all (toBool . isChar) lst = return $ String (concatChars lst)
+  | otherwise = error $ show lst
+listToString x = throwError $ TypeMismatch "list" x
+
+stringToList :: LispValue -> ThrowsError LispValue
+stringToList (String s) = return $ List (map Character s)
+stringToList x          = throwError $ TypeMismatch "string" x
+
+stringAppend :: [LispValue] -> ThrowsError LispValue
+stringAppend strs
+  | all (toBool . isString) strs = return $ String (concatStrs strs)
+  | otherwise = throwError $ Default "should be all strings"
+
+concatStrs :: [LispValue] -> String
+concatStrs []                 = ""
+concatStrs ((String x):xs) = x ++ concatStrs xs
+
+concatChars :: [LispValue] -> String
+concatChars []                 = ""
+concatChars ((Character x):xs) = [x] ++ concatChars xs
+
+substring :: LispValue -> LispValue -> LispValue -> ThrowsError LispValue
+substring (String xs) (RealNumber (LispInteger s)) (RealNumber (LispInteger e)) = do
+  if (s >= 0 && s <= e && e <= (fromIntegral $ length xs))
+    then return $ String (drop (fromIntegral s) (take (fromIntegral e) xs))
+    else throwError $ Default "0 < start < end < (string-length string)."
+substring x (RealNumber _) (RealNumber _) = throwError $ TypeMismatch "string" x
+substring (String _) x (RealNumber _)     = throwError $ TypeMismatch "number" x
+substring (String _) (RealNumber _) x     = throwError $ TypeMismatch "number" x
+substring _ _ _                           = throwError $ Default "substring error"
+
+stringRef :: LispValue -> LispValue -> ThrowsError LispValue
+stringRef (String xs) (RealNumber (LispInteger n)) = do
+  if (length xs > (fromIntegral n))
+    then return $ Character $ xs !! (fromIntegral n)
+    else throwError $ Default "k must be a valid index of string"
+stringRef x (RealNumber _) = throwError $ TypeMismatch "string" x
+stringRef (String _) y     = throwError $ TypeMismatch "number" y
+stringRef _ _              = throwError $ Default "string-ref error"
+
+stringLength :: LispValue -> ThrowsError LispValue
+stringLength (String n) = return $ RealNumber (LispInteger (fromIntegral $ length n))
+stringLength x          = throwError $ TypeMismatch "number" x
+
+string :: [LispValue] -> ThrowsError LispValue
+string chars
+  | all (toBool . isChar) chars = return $ String (concatChars chars)
+  | otherwise = throwError $ Default "should be all chars"
+
+makeString :: LispValue -> ThrowsError LispValue
+makeString (RealNumber (LispInteger len)) = do
+  return $ String $ replicate (fromIntegral len) ' '
+makeString x = throwError $ TypeMismatch "number" x
+
+makeStringWithChar :: LispValue -> LispValue -> ThrowsError LispValue
+makeStringWithChar (RealNumber (LispInteger len)) (Character x) = do
+  return $ String $ replicate (fromIntegral len) x
+makeStringWithChar x (Character _)  = throwError $ TypeMismatch "number" x
+makeStringWithChar (RealNumber _) y = throwError $ TypeMismatch "character" y
+makeStringWithChar _ _              = throwError $ Default "make-string error"
 
 stringToSymbol :: LispValue -> LispValue
 stringToSymbol (String x) = Atom x
@@ -108,13 +188,17 @@ primitivies = [ ("+", numericBinop (+))
               , ("string>?", strBoolBinop (>))
               , ("string<=?", strBoolBinop (<=))
               , ("string>=?", strBoolBinop (>=))
+              , ("string-ci=?", strBoolBinopCi (==))
+              , ("string-ci<?", strBoolBinopCi (<))
+              , ("string-ci>?", strBoolBinopCi (>))
+              , ("string-ci<=?", strBoolBinopCi (<=))
+              , ("string-ci>=?", strBoolBinopCi (>=))
               , ("car", car)
               , ("cdr", cdr)
               , ("cons", cons)
               , ("eq?", eqv)
               , ("eqv?", eqv)
               , ("equal?", equal)
-              , ("cond", cond)
               ]
 
 boolBinop :: (LispValue -> ThrowsError a) -> (a -> a -> Bool) -> [LispValue] -> ThrowsError LispValue
@@ -128,22 +212,29 @@ numBoolBinop :: (Integer -> Integer -> Bool) -> [LispValue] -> ThrowsError LispV
 numBoolBinop = boolBinop unpackNum
 
 strBoolBinop :: (String -> String -> Bool) -> [LispValue] -> ThrowsError LispValue
-strBoolBinop = boolBinop unpackStr
+strBoolBinop = boolBinop (unpackStr False)
+
+strBoolBinopCi :: (String -> String -> Bool) -> [LispValue] -> ThrowsError LispValue
+strBoolBinopCi = boolBinop (unpackStr True)
 
 boolBoolBinop :: (Bool -> Bool -> Bool) -> [LispValue] -> ThrowsError LispValue
 boolBoolBinop = boolBinop unpackBool
 
-unpackStr :: LispValue -> ThrowsError String
-unpackStr (String s)                             = return s
-unpackStr (RealNumber (LispInteger s))           = return $ show s
-unpackStr (Bool s)                               = return $ show s
-unpackStr (ComplexNumber (LispComplex x sign y)) = do
-  x' <- unpackStr (RealNumber x)
-  y' <- unpackStr (RealNumber y)
+maybeToLower :: Bool -> String -> String
+maybeToLower True s   = map toLower s
+maybeToLower False s  = s
+
+unpackStr :: Bool -> LispValue -> ThrowsError String
+unpackStr ci (String s)                             = return $ maybeToLower ci s
+unpackStr ci (RealNumber (LispInteger s))           = return $ maybeToLower ci (show s)
+unpackStr ci (Bool s)                               = return $ maybeToLower ci (show s)
+unpackStr ci (ComplexNumber (LispComplex x sign y)) = do
+  x' <- unpackStr ci (RealNumber x)
+  y' <- unpackStr ci (RealNumber y)
   case sign of
-    Positive -> return $ x' ++ "+" ++ y'
-    Negative -> return $ x' ++ "-" ++ y'
-unpackStr notString                              = throwError $ TypeMismatch "string" notString
+    Positive -> return $ (maybeToLower ci x') ++ "+" ++ (maybeToLower ci y')
+    Negative -> return $ (maybeToLower ci x') ++ "-" ++ (maybeToLower ci y')
+unpackStr _ notString                              = throwError $ TypeMismatch "string" notString
 
 unpackBool :: LispValue -> ThrowsError Bool
 unpackBool (Bool b) = return b
@@ -226,7 +317,7 @@ equal [(DottedList xs x), (DottedList ys y)] = equal [List $ xs ++ [x], List $ y
 equal [(List arg1), (List arg2)]             = compareList arg1 arg2 equal
 equal [arg1, arg2] = do
   primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
-                     [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
+                     [AnyUnpacker unpackNum, AnyUnpacker (unpackStr False), AnyUnpacker unpackBool]
   eqvEquals <- eqv [arg1, arg2]
   return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList

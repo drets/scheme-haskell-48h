@@ -44,14 +44,13 @@ parseString :: Parser LispValue
 parseString = do
   char '"'
   let escape c = try $ string ("\\" ++ [c])
-  x <- many1 $ choice [
+  x <- many $ choice [
       escape '"'  $> '"'
     , escape 'r'  $> '\r'
     , escape 'n'  $> '\n'
     , escape 't'  $> '\t'
     , escape '\\' $> '\\'
-    , noneOf "\""
-    ]
+    ] <|> noneOf "\""
   char '"'
   return $ String x
 
@@ -124,8 +123,14 @@ parseCharacter :: Parser LispValue
 parseCharacter = do
   char '\\'
   first <- anyChar
-  rest <- many (noneOf " ")
-  return $ Character (first:rest)
+  rest <- many (noneOf " )")
+  case rest of
+    [] -> return $ Character first
+    _  -> case map toLower (first:rest) of
+      "space"   -> return $ Character ' '
+      "newline" -> return $ Character '\n'
+      "tab"     -> return $ Character '\t'
+      x         -> error $ "invalid character name" ++ show x
 
 parseRational :: Parser LispValue
 parseRational = do

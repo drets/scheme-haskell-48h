@@ -10,10 +10,10 @@ data LispValue = Atom String
                | Vector (V.Vector LispValue)
                | RealNumber LispReal
                | ComplexNumber LispComplex
-               | Character String
+               | Character Char
                | String String
                | Bool Bool
-               deriving (Eq, Show)
+               deriving (Eq)
 
 data LispComplex = LispComplex LispReal Sign LispReal
                  deriving (Eq, Show)
@@ -27,8 +27,8 @@ data Sign = Positive
           | Negative
           deriving (Eq, Show)
 
--- instance Show LispValue where
---   show = showVal
+instance Show LispValue where
+  show = showVal
 
 showVal :: LispValue -> String
 showVal (String contents) = show contents

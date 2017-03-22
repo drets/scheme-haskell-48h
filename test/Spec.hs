@@ -34,10 +34,10 @@ goodTestParse = TestCase $ do
           , String "Hello \"Haskell\" world"
           )
         , ( "#\\space"
-          , Character "space"
+          , Character ' '
           )
         , ( "#\\ "
-          , Character " "
+          , Character ' '
           )
         , ( "#d100.0"
           , RealNumber (LispDouble 100.0)
@@ -83,6 +83,9 @@ goodTestParse = TestCase $ do
           )
         , ( "\"\\r\""
           , String "\r"
+          )
+        , ( "\"\""
+          , String ""
           )
         , ( "'#(1 (1 2 3) 3)"
           , Vector (V.fromList [RealNumber (LispInteger 1),List [RealNumber (LispInteger 1),RealNumber (LispInteger 2),RealNumber (LispInteger 3)],RealNumber (LispInteger 3)])
@@ -221,6 +224,51 @@ goodTestEval = TestCase $ do
           ),
           ( "(case (car '(c d)) ((a e i o u) 'vowel) ((w y) 'semivowel) (else 'consonant)) "
           , Atom "consonant"
+          ),
+          ( "(make-string 1)"
+          , String " "
+          ),
+          ( "(make-string 3 #\\s)"
+          , String "sss"
+          ),
+          ( "(string #\\s #\\t #\\r #\\i #\\n #\\g)"
+          , String "string"
+          ),
+          ( "(string-length \"Haskell\")"
+          , RealNumber (LispInteger 7)
+          ),
+          ( "(string-length \"\")"
+          , RealNumber (LispInteger 0)
+          ),
+          ( "(string-ref \"Haskell\" 4)"
+          , Character 'e'
+          ),
+          ( "(string=? \"abc\" \"Abc\")"
+          , Bool False
+          ),
+          ( "(string-ci=? \"abc\" \"Abc\")"
+          , Bool True
+          ),
+          ( "(substring \"abcd\" 1 3)"
+          , String "bc"
+          ),
+          ( "(substring \"abcd\" 0 4)"
+          , String "abcd"
+          ),
+          ( "(substring \"abcd\" 0 0)"
+          , String ""
+          ),
+          ( "(string-append \"Hello\" \" \" \"Haskell\" \" world\" \"!\")"
+          , String "Hello Haskell world!"
+          ),
+          ( "(string->list \"abc\")"
+          , List [Character 'a', Character 'b', Character 'c']
+          ),
+          ( "(list->string '(#\\a #\\b #\\c))"
+          , String "abc"
+          ),
+          ( "(string->copy \"abc\")"
+          , String "abc"
           )
         ]
 
@@ -235,6 +283,10 @@ badTestEval = TestCase $ do
         [ "(if 1 (+ 2 3 (- 5 1)) \"unequal\")"
         , "(cond ((< 3 2) 'less) ((< 3 3) 'less))"
         , "(case (car '(c d)) ((a) 'a) ((b) 'b))"
+        , "(string-ref \"Haskell\" 8)"
+        , "(substring \"abcd\" 0 5)"
+        , "(substring \"abcd\" -1 4)"
+        , "(substring 4 0 4)"
         ]
 
   forM_ testCases $ do
