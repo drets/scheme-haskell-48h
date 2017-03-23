@@ -1,5 +1,12 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module Scheme.Eval (eval, trapError, extractValue, liftThrows) where
+module Scheme.Eval (
+  eval,
+  trapError,
+  extractValue,
+  liftThrows,
+  bindVars,
+  primitives,
+) where
 
 import Control.Monad.Except
 import Data.Char
@@ -25,6 +32,16 @@ eval env (List [Atom "set!", Atom var, form]) =
   eval env form >>= setVar env var
 eval env (List [Atom "define", Atom var, form]) =
   eval env form >>= defineVar env var
+eval env (List (Atom "define" : List (Atom var : params) : body)) =
+  makeNormalFunc env params body >>= defineVar env var
+eval env (List (Atom "define" : DottedList (Atom var : params) varargs : body)) =
+  makeVarArgs varargs env params body >>= defineVar env var
+eval env (List (Atom "lambda" : List params : body)) =
+  makeNormalFunc env params body
+eval env (List (Atom "lambda" : DottedList params varargs : body)) =
+  makeVarArgs varargs env params body
+eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
+  makeVarArgs varargs env [] body
 eval env (List (Atom "cond" : clauses))       = cond env clauses
 eval env (List (Atom "case" : clauses))       = ccase env clauses
 eval env (List [Atom "quote", val])           = return val
@@ -48,7 +65,10 @@ eval env (List [Atom "symbol?", val])         = return $ isSymb val
 eval env (List [Atom "symbol->string", val])  = symbolToString env val
 eval env (List [Atom "vector?", val])         = return $ isVector val
 eval env (List [Atom "list?", val])           = return $ isList val
-eval env (List (Atom func : args))            = mapM (eval env) args >>= liftThrows . apply func
+eval env (List (function : args))             = do
+  func <- eval env function
+  argVals <- mapM (eval env) args
+  apply func argVals
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 stringCopy :: LispValue -> ThrowsError LispValue
@@ -163,45 +183,53 @@ isNum (ComplexNumber _) = Bool True
 isNum (RealNumber _)    = Bool True
 isNum _                 = Bool False
 
-apply :: String -> [LispValue] -> ThrowsError LispValue
-apply func args = maybe (throwError $
-                           NotFunction "Unrecognized primitive function args" func)
-                        ($ args)
-                        (lookup func primitivies)
+apply :: LispValue -> [LispValue] -> IOThrowsError LispValue
+apply (PrimitiveFunc func) args = liftThrows $ func args
+apply (Func params varargs body closure) args =
+  if num params /= num args && varargs == Nothing
+     then throwError $ NumArgs (num params) args
+     else (liftIO $ bindVars closure $ zip params args) >>= bindVarArgs varargs >>= evalBody
+  where
+    remainingArgs = drop (length params) args
+    num = toInteger . length
+    evalBody env = liftM last $ mapM (eval env) body
+    bindVarArgs arg env = case arg of
+      Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
+      Nothing -> return env
 
-primitivies :: [(String, [LispValue] -> ThrowsError LispValue)]
-primitivies = [ ("+", numericBinop (+))
-              , ("-", numericBinop (-))
-              , ("*", numericBinop (*))
-              , ("/", numericBinop div)
-              , ("mod", numericBinop mod)
-              , ("quotient", numericBinop quot)
-              , ("remainder", numericBinop rem)
-              , ("=", numBoolBinop (==))
-              , ("<", numBoolBinop (<))
-              , (">", numBoolBinop (>))
-              , ("/=", numBoolBinop (/=))
-              , (">=", numBoolBinop (>=))
-              , ("<=", numBoolBinop (<=))
-              , ("&&", boolBoolBinop (&&))
-              , ("||", boolBoolBinop (||))
-              , ("string=?", strBoolBinop (==))
-              , ("string<?", strBoolBinop (<))
-              , ("string>?", strBoolBinop (>))
-              , ("string<=?", strBoolBinop (<=))
-              , ("string>=?", strBoolBinop (>=))
-              , ("string-ci=?", strBoolBinopCi (==))
-              , ("string-ci<?", strBoolBinopCi (<))
-              , ("string-ci>?", strBoolBinopCi (>))
-              , ("string-ci<=?", strBoolBinopCi (<=))
-              , ("string-ci>=?", strBoolBinopCi (>=))
-              , ("car", car)
-              , ("cdr", cdr)
-              , ("cons", cons)
-              , ("eq?", eqv)
-              , ("eqv?", eqv)
-              , ("equal?", equal)
-              ]
+primitives :: [(String, [LispValue] -> ThrowsError LispValue)]
+primitives = [ ("+", numericBinop (+))
+             , ("-", numericBinop (-))
+             , ("*", numericBinop (*))
+             , ("/", numericBinop div)
+             , ("mod", numericBinop mod)
+             , ("quotient", numericBinop quot)
+             , ("remainder", numericBinop rem)
+             , ("=", numBoolBinop (==))
+             , ("<", numBoolBinop (<))
+             , (">", numBoolBinop (>))
+             , ("/=", numBoolBinop (/=))
+             , (">=", numBoolBinop (>=))
+             , ("<=", numBoolBinop (<=))
+             , ("&&", boolBoolBinop (&&))
+             , ("||", boolBoolBinop (||))
+             , ("string=?", strBoolBinop (==))
+             , ("string<?", strBoolBinop (<))
+             , ("string>?", strBoolBinop (>))
+             , ("string<=?", strBoolBinop (<=))
+             , ("string>=?", strBoolBinop (>=))
+             , ("string-ci=?", strBoolBinopCi (==))
+             , ("string-ci<?", strBoolBinopCi (<))
+             , ("string-ci>?", strBoolBinopCi (>))
+             , ("string-ci<=?", strBoolBinopCi (<=))
+             , ("string-ci>=?", strBoolBinopCi (>=))
+             , ("car", car)
+             , ("cdr", cdr)
+             , ("cons", cons)
+             , ("eq?", eqv)
+             , ("eqv?", eqv)
+             , ("equal?", equal)
+             ]
 
 boolBinop :: (LispValue -> ThrowsError a) -> (a -> a -> Bool) -> [LispValue] -> ThrowsError LispValue
 boolBinop unpacker op args = if length args /= 2
@@ -410,3 +438,12 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
     addBinding (var, value) = do
       ref <- newIORef value
       return (var, ref)
+
+makeFunc :: Maybe String -> Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+makeFunc varargs env params body = return $ Func (map showVal params) varargs body env
+
+makeNormalFunc :: Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+makeNormalFunc = makeFunc Nothing
+
+makeVarArgs :: LispValue -> Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+makeVarArgs = makeFunc . Just . showVal

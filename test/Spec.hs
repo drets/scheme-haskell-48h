@@ -96,7 +96,7 @@ goodTestParse env = TestCase $ do
         ]
 
   forM_ testCases $ do
-    \(input, expected) -> assertEqual "" (Right expected) (runParse input)
+    \(input, expected) -> assertEqual "" (runParse input) (Right expected)
 
 badTestParse :: Env -> Test
 badTestParse env = TestCase $ do
@@ -272,13 +272,58 @@ goodTestEval env = TestCase $ do
           ),
           ( "(string->copy \"abc\")"
           , String "abc"
+          ),
+          ( "(define three 3)"
+          , RealNumber (LispInteger 3)
+          ),
+          ( "(+ three 2)"
+          , RealNumber (LispInteger 5)
+          ),
+          ( "(define two 5)"
+          , RealNumber (LispInteger 5)
+          ),
+          ( "(+ three (- two 2))"
+          , RealNumber (LispInteger 6)
+          ),
+          ( "(define astring \"A string\")"
+          , String "A string"
+          ),
+          ( "(string<? astring \"The string\")"
+          , Bool True
+          ),
+          ( "(define (sum x y) (+ x y))"
+          , Func { params = ["x", "y"]
+                 , vararg = Nothing
+                 , body = [List [Atom "+", Atom "x", Atom "y"]]
+                 , closure = env
+                 }
+          ),
+          ( "(sum 1 2)"
+          , RealNumber (LispInteger 3)
+          ),
+          ( "(define (factorial x) (if (= x 1) 1 (* x (factorial (- x 1)))))"
+          , Func { params = ["x"]
+                 , vararg = Nothing
+                 , body = [List [Atom "if",
+                                 List [Atom "=", Atom "x", RealNumber (LispInteger 1)],
+                                 RealNumber (LispInteger 1),
+                                 List [Atom "*", Atom "x",
+                                      List [ Atom "factorial", List [Atom "-", Atom "x", RealNumber (LispInteger 1)]]]
+                                ]
+                          ]
+                 , closure = env
+                 }
+          ),
+          ( "(factorial 10)"
+          , RealNumber (LispInteger 3628800)
           )
         ]
 
   forM_ testCases $ do
     \(input, expected) -> do
-      let Right actual = runEval env input in
-        assertEqual "" expected actual
+      case runEval env input of
+        Right actual -> assertEqual "" actual expected
+        Left err -> error $ show err
 
 badTestEval :: Env -> Test
 badTestEval env = TestCase $ do
@@ -310,7 +355,12 @@ runEval' env input = case readExpr input of
 nullEnv :: IO Env
 nullEnv = newIORef []
 
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitiveFunc primitives)
+  where
+    makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
+
 main :: IO Counts
 main = do
-  env <- nullEnv
+  env <- primitiveBindings
   runTestTT $ TestList [(goodTestParse env), (badTestParse env), (goodTestEval env), (badTestEval env)]
