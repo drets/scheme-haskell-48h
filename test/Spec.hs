@@ -1,12 +1,13 @@
-module TestMain where
-
-import Test.HUnit
-import Control.Monad
-import Data.Either
-import Text.Parsec
+import           Control.Monad
+import           Data.Either
 import qualified Data.Vector as V
+import           Test.HUnit
+import           Text.Parsec
 
-import Main hiding (main)
+import           Scheme.Parser
+import           Scheme.Eval
+import           Scheme.Types
+
 
 goodTestParse :: Test
 goodTestParse = TestCase $ do
@@ -33,10 +34,10 @@ goodTestParse = TestCase $ do
           , String "Hello \"Haskell\" world"
           )
         , ( "#\\space"
-          , Character "space"
+          , Character ' '
           )
         , ( "#\\ "
-          , Character " "
+          , Character ' '
           )
         , ( "#d100.0"
           , RealNumber (LispDouble 100.0)
@@ -82,6 +83,9 @@ goodTestParse = TestCase $ do
           )
         , ( "\"\\r\""
           , String "\r"
+          )
+        , ( "\"\""
+          , String ""
           )
         , ( "'#(1 (1 2 3) 3)"
           , Vector (V.fromList [RealNumber (LispInteger 1),List [RealNumber (LispInteger 1),RealNumber (LispInteger 2),RealNumber (LispInteger 3)],RealNumber (LispInteger 3)])
@@ -169,17 +173,134 @@ goodTestEval = TestCase $ do
           ),
           ( "(symbol->string (string->symbol \"Malvina\"))"
           , String "Malvina"
+          ),
+          ( "(if (> 2 3) \"no\" \"yes\")"
+          , String "yes"
+          ),
+          ( "(if (= 3 3) (+ 2 3 (- 5 1)) \"unequal\")"
+          , RealNumber (LispInteger 9)
+          ),
+          ( "(cdr '(a simple test))"
+          , List [Atom "simple", Atom "test"]
+          ),
+          ( "(car (cdr '(a simple test)))"
+          , Atom "simple"
+          ),
+          ( "(car '((this is) a test))"
+          , List [Atom "this", Atom "is"]
+          ),
+          ( "(cons '(this is) 'test)"
+          , DottedList [List [Atom "this",Atom "is"]] (Atom "test")
+          ),
+          ( "(cons '(this is) '())"
+          , List [List [Atom "this",Atom "is"]]
+          ),
+          ( "(eqv? 1 3)"
+          , Bool False
+          ),
+          ( "(eqv? 3 3)"
+          , Bool True
+          ),
+          ( "(eqv? 'atom 'atom)"
+          , Bool True
+          ),
+          ( "(cond ((> 3 2) 'greater) (< 3 2) 'less)"
+          , Atom "greater"
+          ),
+          ( "(cond ((> 3 2) 'g 'great 'greater) (< 3 2) 'less)"
+          , Atom "greater"
+          ),
+          ( "(cond ((< 3 2) 'less) ((= 3 3) 'equal))"
+          , Atom "equal"
+          ),
+          ( "(cond ((> 3 3) 'greater) ((< 3 3) 'less) (else 'equal))"
+          , Atom "equal"
+          ),
+          ( "(cond ((> 3 3)))"
+          , List [Atom ">",RealNumber (LispInteger 3),RealNumber (LispInteger 3)]
+          ),
+          ( "(case (* 2 3) ((2 3 5 7) 'prime) ((1 4 6 8 9) 'composite))"
+          , Atom "composite"
+          ),
+          ( "(case (car '(c d)) ((a e i o u) 'vowel) ((w y) 'semivowel) (else 'consonant)) "
+          , Atom "consonant"
+          ),
+          ( "(make-string 1)"
+          , String " "
+          ),
+          ( "(make-string 3 #\\s)"
+          , String "sss"
+          ),
+          ( "(string #\\s #\\t #\\r #\\i #\\n #\\g)"
+          , String "string"
+          ),
+          ( "(string-length \"Haskell\")"
+          , RealNumber (LispInteger 7)
+          ),
+          ( "(string-length \"\")"
+          , RealNumber (LispInteger 0)
+          ),
+          ( "(string-ref \"Haskell\" 4)"
+          , Character 'e'
+          ),
+          ( "(string=? \"abc\" \"Abc\")"
+          , Bool False
+          ),
+          ( "(string-ci=? \"abc\" \"Abc\")"
+          , Bool True
+          ),
+          ( "(substring \"abcd\" 1 3)"
+          , String "bc"
+          ),
+          ( "(substring \"abcd\" 0 4)"
+          , String "abcd"
+          ),
+          ( "(substring \"abcd\" 0 0)"
+          , String ""
+          ),
+          ( "(string-append \"Hello\" \" \" \"Haskell\" \" world\" \"!\")"
+          , String "Hello Haskell world!"
+          ),
+          ( "(string->list \"abc\")"
+          , List [Character 'a', Character 'b', Character 'c']
+          ),
+          ( "(list->string '(#\\a #\\b #\\c))"
+          , String "abc"
+          ),
+          ( "(string->copy \"abc\")"
+          , String "abc"
           )
         ]
 
   forM_ testCases $ do
-    \(input, expected) -> assertEqual "" expected (runEval input)
+    \(input, expected) -> do
+      let Right actual = runEval input in
+        assertEqual "" expected actual
+
+badTestEval :: Test
+badTestEval = TestCase $ do
+  let testCases =
+        [ "(if 1 (+ 2 3 (- 5 1)) \"unequal\")"
+        , "(cond ((< 3 2) 'less) ((< 3 3) 'less))"
+        , "(case (car '(c d)) ((a) 'a) ((b) 'b))"
+        , "(string-ref \"Haskell\" 8)"
+        , "(substring \"abcd\" 0 5)"
+        , "(substring \"abcd\" -1 4)"
+        , "(substring 4 0 4)"
+        ]
+
+  forM_ testCases $ do
+    \input -> do
+      assert $ isLeft (runEval input)
 
 runParse :: String -> Either ParseError LispValue
 runParse = parse parseExpr "scheme"
 
-runEval :: String -> LispValue
-runEval = eval . readExpr
+runEval :: String -> ThrowsError LispValue
+runEval input = case readExpr input of
+  Right val -> eval val
+  Left err  -> error $ show err
+
 
 main :: IO Counts
-main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval]
+main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval, badTestEval]
