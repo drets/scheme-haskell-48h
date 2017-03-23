@@ -3,6 +3,7 @@ module Scheme.Types where
 import           Control.Monad.Except
 import           Data.IORef
 import qualified Data.Vector as V
+import           GHC.IO.Handle
 import           Text.Parsec
 
 data LispValue = Atom String
@@ -17,6 +18,8 @@ data LispValue = Atom String
                | PrimitiveFunc ([LispValue] -> ThrowsError LispValue)
                | Func { params :: [String], vararg :: (Maybe String),
                         body :: [LispValue], closure :: Env }
+               | IOFunc ([LispValue] -> IOThrowsError LispValue)
+               | Port Handle
 
 instance Eq LispValue where
   Atom x == Atom y                   = x == y
@@ -65,6 +68,8 @@ showVal (Func { params = args, vararg = varargs, body = body, closure = env }) =
     (case varargs of
        Nothing -> ""
        Just arg -> "." ++ arg) ++ ") ...)"
+showVal (Port _) = "<IO port>"
+showVal (IOFunc _) = "<IO primitive>"
 
 data LispError = NumArgs Integer [LispValue]
                | TypeMismatch String LispValue

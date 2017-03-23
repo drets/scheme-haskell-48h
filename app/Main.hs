@@ -10,14 +10,12 @@ import Scheme.Eval
 import Scheme.Parser
 import Scheme.Types
 
-
 main :: IO ()
 main = do
   args <- getArgs
-  case length args of
-    0 -> runRepl
-    1 -> runOne $ args !! 0
-    _ -> putStrLn "Program takes only 0 or 1 arguments"
+  if null args
+    then runRepl
+    else runOne $ args
 
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
@@ -41,16 +39,11 @@ until_ predic prompt action = do
 runIOThrows :: IOThrowsError String -> IO String
 runIOThrows action = runExceptT (trapError action) >>= return . extractValue
 
-nullEnv :: IO Env
-nullEnv = newIORef []
-
-runOne :: String -> IO ()
-runOne expr = primitiveBindings >>= flip evalAndPrint expr
+runOne :: [String] -> IO ()
+runOne args = do
+  env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
+  (runIOThrows $ liftM show $ eval env (List [Atom "load", String (args !! 0)]))
+    >>= hPutStrLn stderr
 
 runRepl :: IO ()
 runRepl = primitiveBindings >>= until_ (== "quit") (readPromt "Lisp>>> ") . evalAndPrint
-
-primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitiveFunc primitives)
-  where
-    makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)

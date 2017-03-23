@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts, OverloadedStrings #-}
-module Scheme.Parser (parseExpr, readExpr) where
+module Scheme.Parser (parseExpr, readExpr, readExprList) where
 
 import           Control.Monad
 import           Control.Monad.Except
@@ -13,6 +13,11 @@ import           Text.ParserCombinators.Parsec hiding (spaces, try)
 
 import           Scheme.Types
 
+
+readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow parser input = case parse parser "scheme" input of
+  Left err -> throwError $ Parser err
+  Right val -> return val
 
 parseExpr :: Parser LispValue
 parseExpr =
@@ -30,9 +35,10 @@ parseExpr =
          ]
 
 readExpr :: String -> ThrowsError LispValue
-readExpr input = case parse parseExpr "scheme" input of
-  Left err -> throwError $ Parser err
-  Right val -> return val
+readExpr = readOrThrow parseExpr
+
+readExprList :: String -> ThrowsError [LispValue]
+readExprList = readOrThrow (endBy parseExpr spaces)
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"

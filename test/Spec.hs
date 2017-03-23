@@ -352,14 +352,6 @@ runEval' env input = case readExpr input of
   Right val -> eval env val
   Left err  -> error $ show err
 
-nullEnv :: IO Env
-nullEnv = newIORef []
-
-primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitiveFunc primitives)
-  where
-    makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
-
 main :: IO Counts
 main = do
   env <- primitiveBindings

@@ -6,13 +6,18 @@ module Scheme.Eval (
   liftThrows,
   bindVars,
   primitives,
+  nullEnv,
+  primitiveBindings
 ) where
 
 import Control.Monad.Except
 import Data.Char
 import Data.IORef
+import System.IO
 
+import Scheme.Utils
 import Scheme.Types
+import Scheme.Parser
 
 
 eval :: Env -> LispValue -> IOThrowsError LispValue
@@ -21,7 +26,9 @@ eval env val@(ComplexNumber _) = return val
 eval env val@(RealNumber _)    = return val
 eval env val@(Bool _)          = return val
 eval env val@(Character _)     = return val
-eval env (Atom id)             = getVar env id
+eval env (Atom x)             = getVar env x
+eval env (List [Atom "load", String filename]) =
+  load filename >>= liftM last . mapM (eval env)
 eval env (List [Atom "if", predic, conseq, alt]) = do
   result <- eval env predic
   case result of
@@ -196,6 +203,7 @@ apply (Func params varargs body closure) args =
     bindVarArgs arg env = case arg of
       Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
       Nothing -> return env
+apply (IOFunc func) args = func args
 
 primitives :: [(String, [LispValue] -> ThrowsError LispValue)]
 primitives = [ ("+", numericBinop (+))
@@ -396,10 +404,6 @@ compareDatum key_res datum = case eqv [datum, key_res] of
   Right (Bool res) -> res
   _                -> False
 
-liftThrows :: ThrowsError a -> IOThrowsError a
-liftThrows (Left err)  = throwError err
-liftThrows (Right val) = return val
-
 isBound :: Env -> String -> IO Bool
 isBound envRef var = readIORef envRef >>= return . maybe False (const True) . lookup var
 
@@ -439,6 +443,10 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
       ref <- newIORef value
       return (var, ref)
 
+liftThrows :: ThrowsError a -> IOThrowsError a
+liftThrows (Left err)  = throwError err
+liftThrows (Right val) = return val
+
 makeFunc :: Maybe String -> Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
 makeFunc varargs env params body = return $ Func (map showVal params) varargs body env
 
@@ -447,3 +455,52 @@ makeNormalFunc = makeFunc Nothing
 
 makeVarArgs :: LispValue -> Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
 makeVarArgs = makeFunc . Just . showVal
+
+nullEnv :: IO Env
+nullEnv = newIORef []
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map (makeFunc IOFunc) ioPrimitives
+                                              ++ map (makeFunc PrimitiveFunc) primitives)
+  where
+    makeFunc constructor (var, func) = (var, constructor func)
+
+ioPrimitives :: [(String, [LispValue] -> IOThrowsError LispValue)]
+ioPrimitives = [ ("apply", applyProc)
+               , ("open-input-file", makePort ReadMode)
+               , ("open-output-file", makePort WriteMode)
+               , ("close-input-file", closePort)
+               , ("close-output-file", closePort)
+               , ("read", readProc)
+               , ("write", writeProc)
+               , ("read-contents", readContents)
+               , ("read-all", readAll)
+               ]
+
+applyProc :: [LispValue] -> IOThrowsError LispValue
+applyProc [func, List args] = apply func args
+applyProc (func : args)     = apply func args
+
+makePort :: IOMode -> [LispValue] -> IOThrowsError LispValue
+makePort mode [String filename] = liftM Port $ liftIO $ openFile filename mode
+
+closePort :: [LispValue] -> IOThrowsError LispValue
+closePort [Port port] = liftIO $ hClose port >> (return $ Bool True)
+closePort _           = return $ Bool False
+
+readProc :: [LispValue] -> IOThrowsError LispValue
+readProc []          = readProc [Port stdin]
+readProc [Port port] = (liftIO $ hGetLine port) >>= liftThrows . readExpr
+
+writeProc :: [LispValue] -> IOThrowsError LispValue
+writeProc [obj]            = writeProc [obj, Port stdout]
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+
+readContents :: [LispValue] -> IOThrowsError LispValue
+readContents [String filename] = liftM String $ liftIO $ readFile filename
+
+load :: String -> IOThrowsError [LispValue]
+load filename = (liftIO $ readFile filename) >>= liftThrows . readExprList
+
+readAll :: [LispValue] -> IOThrowsError LispValue
+readAll [String filename] = liftM List $ load filename
