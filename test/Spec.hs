@@ -1,6 +1,9 @@
 import           Control.Monad
+import           Control.Monad.Except
 import           Data.Either
+import           Data.IORef
 import qualified Data.Vector as V
+import           System.IO.Unsafe
 import           Test.HUnit
 import           Text.Parsec
 
@@ -9,8 +12,8 @@ import           Scheme.Eval
 import           Scheme.Types
 
 
-goodTestParse :: Test
-goodTestParse = TestCase $ do
+goodTestParse :: Env -> Test
+goodTestParse env = TestCase $ do
   let testCases =
         [ ( "1"
           , RealNumber (LispInteger 1)
@@ -93,10 +96,10 @@ goodTestParse = TestCase $ do
         ]
 
   forM_ testCases $ do
-    \(input, expected) -> assertEqual "" (Right expected) (runParse input)
+    \(input, expected) -> assertEqual "" (runParse input) (Right expected)
 
-badTestParse :: Test
-badTestParse = TestCase $ do
+badTestParse :: Env -> Test
+badTestParse env = TestCase $ do
   let testCases =
         [ "(a '(imbalanced parens)"
         ]
@@ -104,8 +107,8 @@ badTestParse = TestCase $ do
   forM_ testCases $ do
     \input -> assert (isLeft (runParse input))
 
-goodTestEval :: Test
-goodTestEval = TestCase $ do
+goodTestEval :: Env -> Test
+goodTestEval env = TestCase $ do
   let testCases =
         [
           ( "(+ 2 2)"
@@ -269,16 +272,61 @@ goodTestEval = TestCase $ do
           ),
           ( "(string->copy \"abc\")"
           , String "abc"
+          ),
+          ( "(define three 3)"
+          , RealNumber (LispInteger 3)
+          ),
+          ( "(+ three 2)"
+          , RealNumber (LispInteger 5)
+          ),
+          ( "(define two 5)"
+          , RealNumber (LispInteger 5)
+          ),
+          ( "(+ three (- two 2))"
+          , RealNumber (LispInteger 6)
+          ),
+          ( "(define astring \"A string\")"
+          , String "A string"
+          ),
+          ( "(string<? astring \"The string\")"
+          , Bool True
+          ),
+          ( "(define (sum x y) (+ x y))"
+          , Func { params = ["x", "y"]
+                 , vararg = Nothing
+                 , body = [List [Atom "+", Atom "x", Atom "y"]]
+                 , closure = env
+                 }
+          ),
+          ( "(sum 1 2)"
+          , RealNumber (LispInteger 3)
+          ),
+          ( "(define (factorial x) (if (= x 1) 1 (* x (factorial (- x 1)))))"
+          , Func { params = ["x"]
+                 , vararg = Nothing
+                 , body = [List [Atom "if",
+                                 List [Atom "=", Atom "x", RealNumber (LispInteger 1)],
+                                 RealNumber (LispInteger 1),
+                                 List [Atom "*", Atom "x",
+                                      List [ Atom "factorial", List [Atom "-", Atom "x", RealNumber (LispInteger 1)]]]
+                                ]
+                          ]
+                 , closure = env
+                 }
+          ),
+          ( "(factorial 10)"
+          , RealNumber (LispInteger 3628800)
           )
         ]
 
   forM_ testCases $ do
     \(input, expected) -> do
-      let Right actual = runEval input in
-        assertEqual "" expected actual
+      case runEval env input of
+        Right actual -> assertEqual "" actual expected
+        Left err -> error $ show err
 
-badTestEval :: Test
-badTestEval = TestCase $ do
+badTestEval :: Env -> Test
+badTestEval env = TestCase $ do
   let testCases =
         [ "(if 1 (+ 2 3 (- 5 1)) \"unequal\")"
         , "(cond ((< 3 2) 'less) ((< 3 3) 'less))"
@@ -291,16 +339,20 @@ badTestEval = TestCase $ do
 
   forM_ testCases $ do
     \input -> do
-      assert $ isLeft (runEval input)
+      assert $ isLeft (runEval env input)
 
 runParse :: String -> Either ParseError LispValue
 runParse = parse parseExpr "scheme"
 
-runEval :: String -> ThrowsError LispValue
-runEval input = case readExpr input of
-  Right val -> eval val
+runEval :: Env -> String -> ThrowsError LispValue
+runEval env input = unsafePerformIO (runExceptT (runEval' env input))
+
+runEval' :: Env -> String -> IOThrowsError LispValue
+runEval' env input = case readExpr input of
+  Right val -> eval env val
   Left err  -> error $ show err
 
-
 main :: IO Counts
-main = runTestTT $ TestList [goodTestParse, badTestParse, goodTestEval, badTestEval]
+main = do
+  env <- primitiveBindings
+  runTestTT $ TestList [(goodTestParse env), (badTestParse env), (goodTestEval env), (badTestEval env)]

@@ -1,49 +1,82 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module Scheme.Eval (eval, trapError, extractValue) where
+module Scheme.Eval (
+  eval,
+  trapError,
+  extractValue,
+  liftThrows,
+  bindVars,
+  primitives,
+  nullEnv,
+  primitiveBindings
+) where
 
 import Control.Monad.Except
 import Data.Char
+import Data.IORef
+import System.IO
 
+import Scheme.Utils
 import Scheme.Types
+import Scheme.Parser
 
 
-eval :: LispValue -> ThrowsError LispValue
-eval val@(String _)        = return val
-eval val@(ComplexNumber _) = return val
-eval val@(RealNumber _)    = return val
-eval val@(Bool _)          = return val
-eval val@(Character _)     = return val
-eval (List [Atom "if", predic, conseq, alt]) = do
-  result <- eval predic
+eval :: Env -> LispValue -> IOThrowsError LispValue
+eval env val@(String _)        = return val
+eval env val@(ComplexNumber _) = return val
+eval env val@(RealNumber _)    = return val
+eval env val@(Bool _)          = return val
+eval env val@(Character _)     = return val
+eval env (Atom x)             = getVar env x
+eval env (List [Atom "load", String filename]) =
+  load filename >>= liftM last . mapM (eval env)
+eval env (List [Atom "if", predic, conseq, alt]) = do
+  result <- eval env predic
   case result of
-    Bool False -> eval alt
-    Bool True  -> eval conseq
+    Bool False -> eval env alt
+    Bool True  -> eval env conseq
     x          -> throwError $ TypeMismatch "boolean" x
-eval (List (Atom "cond" : clauses))       = cond clauses
-eval (List (Atom "case" : clauses))       = ccase clauses
-eval (List [Atom "quote", val])           = return val
-eval (List [Atom "boolean?", val])        = return $ isBoolean val
-eval (List [Atom "string?", val])         = return $ isString val
-eval (List [Atom "string->list", str])    = stringToList str
-eval (List [Atom "string->copy", str])    = stringCopy str
-eval (List [Atom "list->string", lst])    = listToString lst
-eval (List [Atom "string->symbol", val])  = return $ stringToSymbol val
-eval (List [Atom "string-length", str])   = stringLength str
-eval (List [Atom "string-ref", str, k])   = stringRef str k
-eval (List (Atom "string-append":strs))   = stringAppend strs
-eval (List (Atom "string":chars))         = string chars
-eval (List [Atom "substring", str, start, end]) =
-  substring str start end
-eval (List [Atom "make-string", k])       = makeString k
-eval (List [Atom "make-string", k, char]) = makeStringWithChar k char
-eval (List [Atom "number?", val])         = return $ isNum val
-eval (List [Atom "char?", val])           = return $ isChar val
-eval (List [Atom "symbol?", val])         = return $ isSymb val
-eval (List [Atom "symbol->string", val])  = return $ symbolToString val
-eval (List [Atom "vector?", val])         = return $ isVector val
-eval (List [Atom "list?", val])           = return $ isList val
-eval (List (Atom func : args))            = mapM eval args >>= apply func
-eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
+eval env (List [Atom "set!", Atom var, form]) =
+  eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) =
+  eval env form >>= defineVar env var
+eval env (List (Atom "define" : List (Atom var : params) : body)) =
+  makeNormalFunc env params body >>= defineVar env var
+eval env (List (Atom "define" : DottedList (Atom var : params) varargs : body)) =
+  makeVarArgs varargs env params body >>= defineVar env var
+eval env (List (Atom "lambda" : List params : body)) =
+  makeNormalFunc env params body
+eval env (List (Atom "lambda" : DottedList params varargs : body)) =
+  makeVarArgs varargs env params body
+eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
+  makeVarArgs varargs env [] body
+eval env (List (Atom "cond" : clauses))       = cond env clauses
+eval env (List (Atom "case" : clauses))       = ccase env clauses
+eval env (List [Atom "quote", val])           = return val
+eval env (List [Atom "boolean?", val])        = return $ isBoolean val
+eval env (List [Atom "string?", val])         = return $ isString val
+eval env (List [Atom "string->list", str])    = liftThrows $ stringToList str
+eval env (List [Atom "string->copy", str])    = liftThrows $ stringCopy str
+eval env (List [Atom "list->string", lst])    = liftThrows $ listToString lst
+eval env (List [Atom "string->symbol", val])  = stringToSymbol env val
+eval env (List [Atom "string-length", str])   = liftThrows $ stringLength str
+eval env (List [Atom "string-ref", str, k])   = liftThrows $ stringRef str k
+eval env (List (Atom "string-append":strs))   = liftThrows $ stringAppend strs
+eval env (List (Atom "string":chars))         = liftThrows $ string chars
+eval env (List [Atom "substring", str, start, end]) =
+  liftThrows $ substring str start end
+eval env (List [Atom "make-string", k])       = liftThrows $ makeString k
+eval env (List [Atom "make-string", k, char]) = liftThrows $ makeStringWithChar k char
+eval env (List [Atom "number?", val])         = return $ isNum val
+eval env (List [Atom "char?", val])           = return $ isChar val
+eval env (List [Atom "symbol?", val])         = return $ isSymb val
+eval env (List [Atom "symbol->string", val])  = symbolToString env val
+eval env (List [Atom "vector?", val])         = return $ isVector val
+eval env (List [Atom "list?", val])           = return $ isList val
+eval env (List (function : args))             = do
+  func <- eval env function
+  argVals <- mapM (eval env) args
+  apply func argVals
+eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 stringCopy :: LispValue -> ThrowsError LispValue
 stringCopy (String s) = return $ String s
@@ -113,18 +146,14 @@ makeStringWithChar x (Character _)  = throwError $ TypeMismatch "number" x
 makeStringWithChar (RealNumber _) y = throwError $ TypeMismatch "character" y
 makeStringWithChar _ _              = throwError $ Default "make-string error"
 
-stringToSymbol :: LispValue -> LispValue
-stringToSymbol (String x) = Atom x
-stringToSymbol x          =
-  case eval x of
-    Right v -> stringToSymbol v
+stringToSymbol :: Env -> LispValue -> IOThrowsError LispValue
+stringToSymbol env (String x) = return $ Atom x
+stringToSymbol env x          = eval env x >>= stringToSymbol env
 
-symbolToString :: LispValue -> LispValue
-symbolToString (Atom x)                      = String x
-symbolToString (List [Atom "quote", Atom x]) = String $ map toLower x
-symbolToString x                             =
-  case eval x of
-    Right v -> symbolToString v
+symbolToString :: Env -> LispValue -> IOThrowsError LispValue
+symbolToString env (Atom x)                      = return $ String x
+symbolToString env (List [Atom "quote", Atom x]) = return $ String $ map toLower x
+symbolToString env x                             = eval env x >>= symbolToString env
 
 isList :: LispValue -> LispValue
 isList (List _) = Bool True
@@ -161,45 +190,54 @@ isNum (ComplexNumber _) = Bool True
 isNum (RealNumber _)    = Bool True
 isNum _                 = Bool False
 
-apply :: String -> [LispValue] -> ThrowsError LispValue
-apply func args = maybe (throwError $
-                           NotFunction "Unrecognized primitive function args" func)
-                        ($ args)
-                        (lookup func primitivies)
+apply :: LispValue -> [LispValue] -> IOThrowsError LispValue
+apply (PrimitiveFunc func) args = liftThrows $ func args
+apply (Func params varargs body closure) args =
+  if num params /= num args && varargs == Nothing
+     then throwError $ NumArgs (num params) args
+     else (liftIO $ bindVars closure $ zip params args) >>= bindVarArgs varargs >>= evalBody
+  where
+    remainingArgs = drop (length params) args
+    num = toInteger . length
+    evalBody env = liftM last $ mapM (eval env) body
+    bindVarArgs arg env = case arg of
+      Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
+      Nothing -> return env
+apply (IOFunc func) args = func args
 
-primitivies :: [(String, [LispValue] -> ThrowsError LispValue)]
-primitivies = [ ("+", numericBinop (+))
-              , ("-", numericBinop (-))
-              , ("*", numericBinop (*))
-              , ("/", numericBinop div)
-              , ("mod", numericBinop mod)
-              , ("quotient", numericBinop quot)
-              , ("remainder", numericBinop rem)
-              , ("=", numBoolBinop (==))
-              , ("<", numBoolBinop (<))
-              , (">", numBoolBinop (>))
-              , ("/=", numBoolBinop (/=))
-              , (">=", numBoolBinop (>=))
-              , ("<=", numBoolBinop (<=))
-              , ("&&", boolBoolBinop (&&))
-              , ("||", boolBoolBinop (||))
-              , ("string=?", strBoolBinop (==))
-              , ("string<?", strBoolBinop (<))
-              , ("string>?", strBoolBinop (>))
-              , ("string<=?", strBoolBinop (<=))
-              , ("string>=?", strBoolBinop (>=))
-              , ("string-ci=?", strBoolBinopCi (==))
-              , ("string-ci<?", strBoolBinopCi (<))
-              , ("string-ci>?", strBoolBinopCi (>))
-              , ("string-ci<=?", strBoolBinopCi (<=))
-              , ("string-ci>=?", strBoolBinopCi (>=))
-              , ("car", car)
-              , ("cdr", cdr)
-              , ("cons", cons)
-              , ("eq?", eqv)
-              , ("eqv?", eqv)
-              , ("equal?", equal)
-              ]
+primitives :: [(String, [LispValue] -> ThrowsError LispValue)]
+primitives = [ ("+", numericBinop (+))
+             , ("-", numericBinop (-))
+             , ("*", numericBinop (*))
+             , ("/", numericBinop div)
+             , ("mod", numericBinop mod)
+             , ("quotient", numericBinop quot)
+             , ("remainder", numericBinop rem)
+             , ("=", numBoolBinop (==))
+             , ("<", numBoolBinop (<))
+             , (">", numBoolBinop (>))
+             , ("/=", numBoolBinop (/=))
+             , (">=", numBoolBinop (>=))
+             , ("<=", numBoolBinop (<=))
+             , ("&&", boolBoolBinop (&&))
+             , ("||", boolBoolBinop (||))
+             , ("string=?", strBoolBinop (==))
+             , ("string<?", strBoolBinop (<))
+             , ("string>?", strBoolBinop (>))
+             , ("string<=?", strBoolBinop (<=))
+             , ("string>=?", strBoolBinop (>=))
+             , ("string-ci=?", strBoolBinopCi (==))
+             , ("string-ci<?", strBoolBinopCi (<))
+             , ("string-ci>?", strBoolBinopCi (>))
+             , ("string-ci<=?", strBoolBinopCi (<=))
+             , ("string-ci>=?", strBoolBinopCi (>=))
+             , ("car", car)
+             , ("cdr", cdr)
+             , ("cons", cons)
+             , ("eq?", eqv)
+             , ("eqv?", eqv)
+             , ("equal?", equal)
+             ]
 
 boolBinop :: (LispValue -> ThrowsError a) -> (a -> a -> Bool) -> [LispValue] -> ThrowsError LispValue
 boolBinop unpacker op args = if length args /= 2
@@ -323,45 +361,146 @@ equal [arg1, arg2] = do
 equal badArgList = throwError $ NumArgs 2 badArgList
 
 -- since we want to fail if <test> returns not a bool doesn't make sense to implement alternate form (<test> => <expression>)
-cond :: [LispValue] -> ThrowsError LispValue
-cond [] = throwError $ Default "all <test>s evaluate to false values"
-cond [List ((Atom "else"):expressions)] = evalExpressions expressions
-cond (List (test:expressions):clauses) = cond' test expressions clauses
-cond bad = throwError $ Default $ "cond eval error: " ++ show bad
+cond :: Env -> [LispValue] -> IOThrowsError LispValue
+cond env [] = throwError $ Default "all <test>s evaluate to false values"
+cond env [List ((Atom "else"):expressions)] = evalExpressions env expressions
+cond env (List (test:expressions):clauses) = cond' env test expressions clauses
+cond env bad = throwError $ Default $ "cond eval error: " ++ show bad
 
-cond' :: LispValue -> [LispValue] -> [LispValue] -> ThrowsError LispValue
-cond' test []          _  = return $ test
-cond' test expressions xs = do
-  result <- eval test
+cond' :: Env -> LispValue -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+cond' env test []          _  = return $ test
+cond' env test expressions xs = do
+  result <- eval env test
   case result of
-    Bool True  -> evalExpressions expressions
-    Bool False -> cond xs
+    Bool True  -> evalExpressions env expressions
+    Bool False -> cond env xs
     x          -> throwError $ TypeMismatch "boolean" x
 
-evalExpressions :: [LispValue] -> ThrowsError LispValue
-evalExpressions []     =  throwError $ Default "evalExpressions error"
-evalExpressions [x]    = eval x
-evalExpressions (x:xs) = eval x >> evalExpressions xs
+evalExpressions :: Env -> [LispValue] -> IOThrowsError LispValue
+evalExpressions env []     =  throwError $ Default "evalExpressions error"
+evalExpressions env [x]    = eval env x
+evalExpressions env (x:xs) = eval env x >> evalExpressions env xs
 
-ccase :: [LispValue] -> ThrowsError LispValue
-ccase [] = throwError $ Default "all <test>s evaluate to false values"
-ccase (List key:clauses) = do
-  res <- eval (List key)
-  ccase' clauses res
-ccase bad = throwError $ Default $ "case eval error: " ++ show bad
+ccase :: Env -> [LispValue] -> IOThrowsError LispValue
+ccase env [] = throwError $ Default "all <test>s evaluate to false values"
+ccase env (List key:clauses) = do
+  res <- eval env (List key)
+  ccase' env clauses res
+ccase env bad = throwError $ Default $ "case eval error: " ++ show bad
 
-ccase' :: [LispValue] -> LispValue -> ThrowsError LispValue
-ccase' [] _ = throwError $ Default "all <test>s evaluate to false values"
-ccase' [List ((Atom "else"):expressions)] _ = evalExpressions expressions
-ccase' (List ((List datums):expressions):clauses) key = do
+ccase' :: Env -> [LispValue] -> LispValue -> IOThrowsError LispValue
+ccase' env [] _ = throwError $ Default "all <test>s evaluate to false values"
+ccase' env [List ((Atom "else"):expressions)] _ = evalExpressions env expressions
+ccase' env (List ((List datums):expressions):clauses) key = do
   if any (compareDatum key) datums
     then
-      evalExpressions expressions
+      evalExpressions env expressions
     else
-      ccase' clauses key
-ccase' bad _ = throwError $ Default $ "case eval error: " ++ show bad
+      ccase' env clauses key
+ccase' env bad _ = throwError $ Default $ "case eval error: " ++ show bad
 
 compareDatum :: LispValue -> LispValue -> Bool
 compareDatum key_res datum = case eqv [datum, key_res] of
   Right (Bool res) -> res
   _                -> False
+
+isBound :: Env -> String -> IO Bool
+isBound envRef var = readIORef envRef >>= return . maybe False (const True) . lookup var
+
+getVar :: Env -> String -> IOThrowsError LispValue
+getVar envRef var = do
+  env <- liftIO $ readIORef envRef
+  maybe (throwError $ UnboundVar "Getting an unbound variable" var)
+        (liftIO . readIORef)
+        (lookup var env)
+
+setVar :: Env -> String -> LispValue -> IOThrowsError LispValue
+setVar envRef var value = do
+  env <- liftIO $ readIORef envRef
+  maybe (throwError $ UnboundVar "Setting an unboand variable" var)
+        (liftIO . (flip writeIORef value))
+        (lookup var env)
+  return value
+
+defineVar :: Env -> String -> LispValue -> IOThrowsError LispValue
+defineVar envRef var value = do
+  alreadyDefined <- liftIO $ isBound envRef var
+  if alreadyDefined
+    then
+      setVar envRef var value >> return value
+    else
+      liftIO $ do
+        valueRef <- newIORef value
+        env <- readIORef envRef
+        writeIORef envRef ((var, valueRef) : env)
+        return value
+
+bindVars :: Env -> [(String, LispValue)] -> IO Env
+bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
+  where
+    extendEnv binds env = liftM (++ env) (mapM addBinding binds)
+    addBinding (var, value) = do
+      ref <- newIORef value
+      return (var, ref)
+
+liftThrows :: ThrowsError a -> IOThrowsError a
+liftThrows (Left err)  = throwError err
+liftThrows (Right val) = return val
+
+makeFunc :: Maybe String -> Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+makeFunc varargs env params body = return $ Func (map showVal params) varargs body env
+
+makeNormalFunc :: Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+makeNormalFunc = makeFunc Nothing
+
+makeVarArgs :: LispValue -> Env -> [LispValue] -> [LispValue] -> IOThrowsError LispValue
+makeVarArgs = makeFunc . Just . showVal
+
+nullEnv :: IO Env
+nullEnv = newIORef []
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map (makeFunc IOFunc) ioPrimitives
+                                              ++ map (makeFunc PrimitiveFunc) primitives)
+  where
+    makeFunc constructor (var, func) = (var, constructor func)
+
+ioPrimitives :: [(String, [LispValue] -> IOThrowsError LispValue)]
+ioPrimitives = [ ("apply", applyProc)
+               , ("open-input-file", makePort ReadMode)
+               , ("open-output-file", makePort WriteMode)
+               , ("close-input-file", closePort)
+               , ("close-output-file", closePort)
+               , ("read", readProc)
+               , ("write", writeProc)
+               , ("read-contents", readContents)
+               , ("read-all", readAll)
+               ]
+
+applyProc :: [LispValue] -> IOThrowsError LispValue
+applyProc [func, List args] = apply func args
+applyProc (func : args)     = apply func args
+
+makePort :: IOMode -> [LispValue] -> IOThrowsError LispValue
+makePort mode [String filename] = liftM Port $ liftIO $ openFile filename mode
+
+closePort :: [LispValue] -> IOThrowsError LispValue
+closePort [Port port] = liftIO $ hClose port >> (return $ Bool True)
+closePort _           = return $ Bool False
+
+readProc :: [LispValue] -> IOThrowsError LispValue
+readProc []          = readProc [Port stdin]
+readProc [Port port] = (liftIO $ hGetLine port) >>= liftThrows . readExpr
+
+writeProc :: [LispValue] -> IOThrowsError LispValue
+writeProc [obj]            = writeProc [obj, Port stdout]
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+
+readContents :: [LispValue] -> IOThrowsError LispValue
+readContents [String filename] = liftM String $ liftIO $ readFile filename
+
+load :: String -> IOThrowsError [LispValue]
+load filename = (liftIO $ readFile filename) >>= liftThrows . readExprList
+
+readAll :: [LispValue] -> IOThrowsError LispValue
+readAll [String filename] = liftM List $ load filename
