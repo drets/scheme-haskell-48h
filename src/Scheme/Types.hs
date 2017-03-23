@@ -1,8 +1,9 @@
 module Scheme.Types where
 
+import           Control.Monad.Except
+import           Data.IORef
 import qualified Data.Vector as V
-import Text.Parsec
-
+import           Text.Parsec
 
 data LispValue = Atom String
                | List [LispValue]
@@ -68,3 +69,6 @@ showError (Default msg)                 = "Default " ++ show msg
 
 unwordsList :: [LispValue] -> String
 unwordsList = unwords . map showVal
+
+type Env = IORef [(String, IORef LispValue)]
+type IOThrowsError = ExceptT LispError IO
